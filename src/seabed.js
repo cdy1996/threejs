@@ -55,14 +55,16 @@ function buildRocks() {
 }
 
 // ---------- 海草（合并几何 + 顶点摇摆 shader） ----------
+export const SEAWEED_CLUSTERS = [
+  [-3.6, 1.6], [-2.9, 2.4], [3.4, -1.2], [3.9, -0.2],
+  [1.4, 3.6], [0.6, 3.9], [-0.8, -3.6], [1.9, -3.4], [-4.0, -0.6]
+];
+
 function buildSeaweed() {
   const geos = [];
+  const clusters = SEAWEED_CLUSTERS;
   const phases = [];
   const bend = [];
-  const clusters = [
-    [-3.6, 1.6], [-2.9, 2.4], [3.4, -1.2], [3.9, -0.2],
-    [1.4, 3.6], [0.6, 3.9], [-0.8, -3.6], [1.9, -3.4], [-4.0, -0.6]
-  ];
   for (const [cx, cz] of clusters) {
     const blades = randInt(9, 14);
     for (let b = 0; b < blades; b++) {

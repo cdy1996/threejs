@@ -5,6 +5,7 @@ import { createAquarium } from './aquarium.js';
 import { createSeabed } from './seabed.js';
 import { createFishSchool } from './fish.js';
 import { createSurfaceProps } from './surface.js';
+import { createBubbles } from './bubbles.js';
 import { createCameraRig } from './camera.js';
 import { createPostFX } from './postfx.js';
 
@@ -40,6 +41,9 @@ scene.add(seabed.group);
 let fishSchool = createFishSchool();
 scene.add(fishSchool.mesh);
 
+const bubbles = createBubbles();
+scene.add(bubbles.points);
+
 const surfaceProps = createSurfaceProps();
 scene.add(surfaceProps.group);
 
@@ -53,6 +57,7 @@ const params = {
   fishCount: 650,
   fishSpeed: 1.0,
   waveAmp: 0.2,
+  bubbleCount: 150,
   bgColor: '#8fd0cc'
 };
 
@@ -71,6 +76,9 @@ fBoat.add(params, 'boatScale', 0.4, 2.2, 0.01).name('大小').onChange(v => surf
 const fFish = gui.addFolder('鱼群');
 fFish.add(params, 'fishCount', 100, 1500, 10).name('数量').onFinishChange(v => rebuildFish(v));
 fFish.add(params, 'fishSpeed', 0.2, 3, 0.01).name('速度');
+
+const fBubble = gui.addFolder('气泡');
+fBubble.add(params, 'bubbleCount', 0, 400, 1).name('数量').onChange(v => bubbles.setCount(v));
 
 const fWater = gui.addFolder('水');
 fWater.add(params, 'waveAmp', 0, 0.4, 0.005).name('波浪幅度').onChange(v => {
@@ -120,6 +128,7 @@ function loop() {
 
   aquarium.update(t);
   seabed.update(t);
+  bubbles.update(t);
   fishSchool.update(t, dt * params.fishSpeed);
   surfaceProps.update(t);
   cameraRig.update(dt);
