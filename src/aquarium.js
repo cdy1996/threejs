@@ -96,6 +96,41 @@ const surfaceFragment = /* glsl */ `
   }
 `;
 
+/**
+ * 生成与水柱六棱柱精确对齐的细分六边形水面几何（XZ 平面，法线朝 +Y）
+ * 极坐标网格：边界半径按六边形轮廓 r(θ) = apothem / cos(θ') 收敛，内部细分用于顶点波浪
+ */
+function makeHexSurfaceGeometry(circumRadius, rings = 10, segs = 48) {
+  const apothem = circumRadius * Math.cos(Math.PI / 6);
+  const positions = [];
+  const indices = [];
+  for (let ring = 0; ring <= rings; ring++) {
+    const rr = ring / rings;
+    for (let s = 0; s <= segs; s++) {
+      const theta = (s / segs) * Math.PI * 2;
+      // 该角度处六边形边界半径
+      const b = ((theta + Math.PI / 6) % (Math.PI / 3)) - Math.PI / 6;
+      const rMax = apothem / Math.cos(b);
+      const r = rr * rMax;
+      positions.push(Math.sin(theta) * r, 0, Math.cos(theta) * r);
+    }
+  }
+  const stride = segs + 1;
+  for (let ring = 0; ring < rings; ring++) {
+    for (let s = 0; s < segs; s++) {
+      const a = ring * stride + s;
+      const b = a + 1;
+      const c = a + stride;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  return geo;
+}
+
 export function createAquarium() {
   const group = new THREE.Group();
 
@@ -132,10 +167,8 @@ export function createAquarium() {
   water.renderOrder = 10;
   group.add(water);
 
-  // ---- 水面（细分圆盘，顶点波浪起伏） ----
-  // 半径取六棱柱内切半径，恰好贴住水体侧壁
-  const surfaceRadius = TANK.waterRadius * 0.866;
-  const surfaceGeo = new THREE.CircleGeometry(surfaceRadius, 40);
+  // ---- 水面（细分六边形，与水柱轮廓精确对齐，顶点波浪起伏） ----
+  const surfaceGeo = makeHexSurfaceGeometry(TANK.waterRadius * 0.995, 10, 48);
   const surfaceMat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
@@ -149,7 +182,6 @@ export function createAquarium() {
     fragmentShader: surfaceFragment
   });
   const surface = new THREE.Mesh(surfaceGeo, surfaceMat);
-  surface.rotation.x = -Math.PI / 2;
   surface.position.y = TANK.waterTopY;
   surface.renderOrder = 12;
   group.add(surface);
