@@ -101,16 +101,16 @@ const surfaceFragment = /* glsl */ `
  * 极坐标网格：边界半径按六边形轮廓 r(θ) = apothem / cos(θ') 收敛，内部细分用于顶点波浪
  */
 function makeHexSurfaceGeometry(circumRadius, rings = 10, segs = 48) {
-  const apothem = circumRadius * Math.cos(Math.PI / 6);
   const positions = [];
   const indices = [];
   for (let ring = 0; ring <= rings; ring++) {
     const rr = ring / rings;
     for (let s = 0; s <= segs; s++) {
       const theta = (s / segs) * Math.PI * 2;
-      // 该角度处六边形边界半径
-      const b = ((theta + Math.PI / 6) % (Math.PI / 3)) - Math.PI / 6;
-      const rMax = apothem / Math.cos(b);
+      // 该角度处六边形边界半径：角在 θ = k·60°（与 CylinderGeometry 六棱柱角同相位）
+      const t2 = (((theta % (Math.PI / 3)) + Math.PI / 3) % (Math.PI / 3));
+      const b = t2 - Math.PI / 6; // [-30°, 30°)
+      const rMax = (circumRadius * Math.cos(Math.PI / 6)) / Math.cos(b);
       const r = rr * rMax;
       positions.push(Math.sin(theta) * r, 0, Math.cos(theta) * r);
     }
