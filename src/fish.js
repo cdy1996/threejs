@@ -34,7 +34,8 @@ const PALETTE = [
   0x4dd0e1, 0x29b6f6, 0x80deea, 0x26c6da, 0xfff176
 ];
 
-export function createFishSchool() {
+export function createFishSchool(count = FISH_COUNT) {
+  const TOTAL = count;
   const geometry = makeFishShape();
   const material = new THREE.MeshBasicMaterial({
     side: THREE.DoubleSide,
@@ -42,23 +43,23 @@ export function createFishSchool() {
     opacity: 0.96
   });
 
-  const mesh = new THREE.InstancedMesh(geometry, material, FISH_COUNT);
+  const mesh = new THREE.InstancedMesh(geometry, material, TOTAL);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   mesh.renderOrder = 5;
   mesh.frustumCulled = false;
 
   // 每条鱼的漩涡轨道参数
-  const orbitR = new Float32Array(FISH_COUNT);   // 公转半径
-  const angle = new Float32Array(FISH_COUNT);    // 当前相位角
-  const angSpeed = new Float32Array(FISH_COUNT); // 角速度
-  const baseY = new Float32Array(FISH_COUNT);    // 基准高度
-  const bobAmp = new Float32Array(FISH_COUNT);   // 上下浮动幅度
-  const bobFreq = new Float32Array(FISH_COUNT);  // 浮动频率
-  const phase = new Float32Array(FISH_COUNT);    // 个体相位
-  const prevPos = new Float32Array(FISH_COUNT * 3);
+  const orbitR = new Float32Array(TOTAL);   // 公转半径
+  const angle = new Float32Array(TOTAL);    // 当前相位角
+  const angSpeed = new Float32Array(TOTAL); // 角速度
+  const baseY = new Float32Array(TOTAL);    // 基准高度
+  const bobAmp = new Float32Array(TOTAL);   // 上下浮动幅度
+  const bobFreq = new Float32Array(TOTAL);  // 浮动频率
+  const phase = new Float32Array(TOTAL);    // 个体相位
+  const prevPos = new Float32Array(TOTAL * 3);
 
   const color = new THREE.Color();
-  for (let i = 0; i < FISH_COUNT; i++) {
+  for (let i = 0; i < TOTAL; i++) {
     // 半径分布偏向中层，形成饱满的漩涡锥
     const t = Math.random();
     orbitR[i] = 0.6 + Math.sqrt(t) * (BOUND.rMax - 0.6);
@@ -88,7 +89,7 @@ export function createFishSchool() {
 
   function update(t, dt) {
     const dtc = Math.min(dt, 0.05);
-    for (let i = 0; i < FISH_COUNT; i++) {
+    for (let i = 0; i < TOTAL; i++) {
       // 公转 + 内外呼吸漂移
       angle[i] += angSpeed[i] * dtc;
       const r = orbitR[i] + Math.sin(t * 0.5 + phase[i]) * 0.45;

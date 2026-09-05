@@ -9,7 +9,7 @@ import { TANK, COLORS, rand, randInt, toonMaterial } from './utils.js';
 
 // ---------- 沙地 ----------
 function buildSand() {
-  const geo = new THREE.CircleGeometry(TANK.glassRadius * 0.985, 48, 0, Math.PI * 2);
+  const geo = new THREE.CircleGeometry(TANK.waterRadius * 0.99, 56, 0, Math.PI * 2);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);

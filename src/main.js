@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import GUI from 'three/addons/libs/lil-gui.module.min.js';
 import { TANK, COLORS } from './utils.js';
 import { createAquarium } from './aquarium.js';
 import { createSeabed } from './seabed.js';
@@ -36,7 +37,7 @@ scene.add(aquarium.group);
 const seabed = createSeabed();
 scene.add(seabed.group);
 
-const fishSchool = createFishSchool();
+let fishSchool = createFishSchool();
 scene.add(fishSchool.mesh);
 
 const surfaceProps = createSurfaceProps();
@@ -45,21 +46,65 @@ scene.add(surfaceProps.group);
 // ---------- 后处理 ----------
 const postfx = createPostFX(renderer, scene, camera);
 
+// ---------- 可调参数 + GUI 控制面板 ----------
+const params = {
+  playIntro: false,
+  boatScale: 1.0,
+  fishCount: 650,
+  fishSpeed: 1.0,
+  waveAmp: 0.2,
+  bgColor: '#8fd0cc'
+};
+
+const bgSky = new THREE.Color(params.bgColor);
+const bgUnder = new THREE.Color(COLORS.bgUnder);
+const fogSky = new THREE.Color(params.bgColor).lerp(new THREE.Color(0xffffff), 0.15);
+const fogUnder = new THREE.Color(COLORS.fogUnder);
+
+const gui = new GUI({ title: '控制面板' });
+const fAnim = gui.addFolder('动画');
+fAnim.add(params, 'playIntro').name('播放运镜动画').onChange(v => (v ? cameraRig.playIntro() : cameraRig.stopIntro()));
+
+const fBoat = gui.addFolder('船');
+fBoat.add(params, 'boatScale', 0.4, 2.2, 0.01).name('大小').onChange(v => surfaceProps.setBoatScale(v));
+
+const fFish = gui.addFolder('鱼群');
+fFish.add(params, 'fishCount', 100, 1500, 10).name('数量').onFinishChange(v => rebuildFish(v));
+fFish.add(params, 'fishSpeed', 0.2, 3, 0.01).name('速度');
+
+const fWater = gui.addFolder('水');
+fWater.add(params, 'waveAmp', 0, 0.4, 0.005).name('波浪幅度').onChange(v => {
+  aquarium.surfaceMat.uniforms.uWaveAmp.value = v;
+});
+
+const fEnv = gui.addFolder('环境');
+fEnv.addColor(params, 'bgColor').name('背景颜色').onChange(v => {
+  bgSky.set(v);
+  fogSky.set(v).lerp(new THREE.Color(0xffffff), 0.15);
+});
+
+// 鱼群数量变更：销毁重建
+function rebuildFish(count) {
+  scene.remove(fishSchool.mesh);
+  fishSchool.mesh.geometry.dispose();
+  fishSchool.mesh.dispose();
+  fishSchool = createFishSchool(count);
+  scene.add(fishSchool.mesh);
+}
+
 // ---------- 水下状态切换 ----------
 let underwaterFactor = 0; // 0 空中 → 1 水下
-const fogSky = new THREE.Color(COLORS.fogSky);
-const fogUnder = new THREE.Color(COLORS.fogUnder);
-const bgSky = new THREE.Color(COLORS.bgSky);
-const bgUnder = new THREE.Color(COLORS.bgUnder);
+const fogUnderC = fogUnder;
+const bgUnderC = bgUnder;
 
 function applyUnderwaterBlend(target, dt) {
   const k = 1 - Math.pow(0.002, dt); // 平滑趋近
   underwaterFactor += (target - underwaterFactor) * k;
   const f = underwaterFactor;
 
-  scene.fog.color.copy(fogSky).lerp(fogUnder, f);
+  scene.fog.color.copy(fogSky).lerp(fogUnderC, f);
   scene.fog.density = THREE.MathUtils.lerp(0.012, 0.16, f);
-  scene.background.copy(bgSky).lerp(bgUnder, f);
+  scene.background.copy(bgSky).lerp(bgUnderC, f);
 
   aquarium.waterMat.uniforms.uUnderwater.value = f;
 }
@@ -75,7 +120,7 @@ function loop() {
 
   aquarium.update(t);
   seabed.update(t);
-  fishSchool.update(t, dt);
+  fishSchool.update(t, dt * params.fishSpeed);
   surfaceProps.update(t);
   cameraRig.update(dt);
   applyUnderwaterBlend(cameraRig.isUnderwater() ? 1 : 0, dt);
@@ -97,5 +142,9 @@ window.addEventListener('resize', () => {
   postfx.setSize(innerWidth, innerHeight);
 });
 
-// 点击跳过开场运镜
-window.addEventListener('dblclick', () => cameraRig.skipIntro());
+// 双击停止运镜动画
+window.addEventListener('dblclick', () => {
+  params.playIntro = false;
+  gui.controllersRecursive().forEach(c => c.updateDisplay());
+  cameraRig.stopIntro();
+});

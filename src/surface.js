@@ -100,6 +100,9 @@ export function createSurfaceProps() {
 
   return {
     group,
+    setBoatScale(s) {
+      boat.scale.setScalar(s);
+    },
     update(t) {
       boat.position.y = boatBaseY + Math.sin(t * 1.1) * 0.07;
       boat.rotation.z = Math.sin(t * 0.9) * 0.05;
