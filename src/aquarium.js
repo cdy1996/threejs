@@ -2,34 +2,11 @@ import * as THREE from 'three';
 import { TANK, COLORS } from './utils.js';
 
 /**
- * 鱼缸容器：木质底座 + 六边形玻璃外壳（菲涅尔 shader）+ 水体 Volume（深度雾 shader）
- * 半透明物体统一后渲染：水体 renderOrder=10，玻璃 renderOrder=20
+ * 纯水模型（无玻璃缸体）：
+ * - 水体 Volume：六棱柱侧面，深度雾 shader
+ * - 水面：细分圆盘，多重正弦波顶点起伏 + 波纹高光
+ * 半透明物体统一后渲染：水体 renderOrder=10，水面 renderOrder=12
  */
-
-const glassVertex = /* glsl */ `
-  varying vec3 vWorldNormal;
-  varying vec3 vViewDir;
-  void main() {
-    vec4 worldPos = modelMatrix * vec4(position, 1.0);
-    vWorldNormal = normalize(mat3(modelMatrix) * normal);
-    vViewDir = normalize(cameraPosition - worldPos.xyz);
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
-  }
-`;
-
-const glassFragment = /* glsl */ `
-  uniform vec3 uColor;
-  uniform float uFresnelPower;
-  uniform float uOpacity;
-  varying vec3 vWorldNormal;
-  varying vec3 vViewDir;
-  void main() {
-    float fresnel = pow(1.0 - max(dot(vWorldNormal, vViewDir), 0.0), uFresnelPower);
-    vec3 col = uColor + fresnel * 0.45;
-    float alpha = uOpacity + fresnel * 0.5;
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.85));
-  }
-`;
 
 const waterVertex = /* glsl */ `
   varying vec3 vWorldPos;
@@ -75,12 +52,26 @@ const waterFragment = /* glsl */ `
 
 const surfaceVertex = /* glsl */ `
   uniform float uTime;
+  uniform float uWaveAmp;
   varying vec3 vWorldPos;
+  varying float vWave;
+
+  // 波面高度场：多方向叠加的正弦波
+  float waveH(vec2 p, float t) {
+    float h = 0.0;
+    h += sin(p.x * 0.9 + t * 1.3) * 0.5;
+    h += sin(p.y * 1.2 - t * 1.0) * 0.4;
+    h += sin((p.x + p.y) * 0.7 + t * 1.7) * 0.35;
+    h += sin(length(p) * 1.6 - t * 2.0) * 0.3;
+    return h;
+  }
+
   void main() {
     vec3 p = position;
     vec4 world0 = modelMatrix * vec4(p, 1.0);
-    // 水面微微起伏
-    world0.y += sin(uTime * 1.6 + world0.x * 1.2 + world0.z * 0.9) * 0.05;
+    float h = waveH(world0.xz, uTime);
+    world0.y += h * uWaveAmp;
+    vWave = h;
     vWorldPos = world0.xyz;
     gl_Position = projectionMatrix * viewMatrix * world0;
   }
@@ -90,10 +81,18 @@ const surfaceFragment = /* glsl */ `
   uniform vec3 uShallowColor;
   uniform float uTime;
   varying vec3 vWorldPos;
+  varying float vWave;
   void main() {
+    // 波峰亮、波谷深的波纹着色
+    float crest = smoothstep(0.35, 1.2, vWave);
+    float trough = smoothstep(-0.35, -1.2, vWave);
+    vec3 col = uShallowColor;
+    col += vec3(0.14, 0.17, 0.16) * crest;   // 波峰提亮
+    col -= vec3(0.05, 0.08, 0.08) * trough;  // 波谷加深
+    // 细密波纹
     float ripple = sin(vWorldPos.x * 2.4 + uTime * 1.8) * sin(vWorldPos.z * 2.1 - uTime * 1.3);
-    vec3 col = uShallowColor + vec3(0.10, 0.13, 0.12) * ripple;
-    gl_FragColor = vec4(col, 0.55);
+    col += vec3(0.06, 0.09, 0.08) * ripple;
+    gl_FragColor = vec4(col, 0.62);
   }
 `;
 
@@ -108,46 +107,7 @@ export function createAquarium() {
   base.position.y = TANK.baseHeight / 2;
   group.add(base);
 
-  // 底座上沿装饰环
-  const rim = new THREE.Mesh(
-    new THREE.TorusGeometry(TANK.glassRadius + 0.12, 0.16, 10, 6),
-    new THREE.MeshToonMaterial({ color: 0x6f4429 })
-  );
-  rim.rotation.x = Math.PI / 2;
-  rim.position.y = TANK.glassBottomY + 0.05;
-  group.add(rim);
-
-  // ---- 玻璃外壳（六棱柱侧面 + 顶部开口沿口） ----
-  const glassMat = new THREE.ShaderMaterial({
-    transparent: true,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-    uniforms: {
-      uColor: { value: new THREE.Color(COLORS.glass) },
-      uFresnelPower: { value: 2.2 },
-      uOpacity: { value: 0.08 }
-    },
-    vertexShader: glassVertex,
-    fragmentShader: glassFragment
-  });
-  const glass = new THREE.Mesh(
-    new THREE.CylinderGeometry(TANK.glassRadius, TANK.glassRadius, TANK.glassHeight, 6, 1, true),
-    glassMat
-  );
-  glass.position.y = TANK.glassBottomY + TANK.glassHeight / 2;
-  glass.renderOrder = 20;
-  group.add(glass);
-
-  // 顶部玻璃沿口
-  const topRim = new THREE.Mesh(
-    new THREE.TorusGeometry(TANK.glassRadius + 0.05, 0.1, 10, 6),
-    new THREE.MeshToonMaterial({ color: 0x7fb8b4 })
-  );
-  topRim.rotation.x = Math.PI / 2;
-  topRim.position.y = TANK.glassBottomY + TANK.glassHeight;
-  group.add(topRim);
-
-  // ---- 水体 Volume ----
+  // ---- 水体 Volume（六棱柱侧面） ----
   const waterMat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
@@ -172,22 +132,23 @@ export function createAquarium() {
   water.renderOrder = 10;
   group.add(water);
 
-  // ---- 水面盖 ----
+  // ---- 水面（细分圆盘，顶点波浪起伏） ----
+  // 半径取六棱柱内切半径，恰好贴住水体侧壁
+  const surfaceRadius = TANK.waterRadius * 0.866;
+  const surfaceGeo = new THREE.CircleGeometry(surfaceRadius, 40);
   const surfaceMat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
     uniforms: {
       uShallowColor: { value: new THREE.Color(COLORS.waterShallow) },
-      uTime: { value: 0 }
+      uTime: { value: 0 },
+      uWaveAmp: { value: 0.22 }
     },
     vertexShader: surfaceVertex,
     fragmentShader: surfaceFragment
   });
-  const surface = new THREE.Mesh(
-    new THREE.CircleGeometry(TANK.waterRadius, 6),
-    surfaceMat
-  );
+  const surface = new THREE.Mesh(surfaceGeo, surfaceMat);
   surface.rotation.x = -Math.PI / 2;
   surface.position.y = TANK.waterTopY;
   surface.renderOrder = 12;
@@ -197,7 +158,6 @@ export function createAquarium() {
     group,
     waterMat,
     surfaceMat,
-    glassMat,
     update(t) {
       waterMat.uniforms.uTime.value = t;
       surfaceMat.uniforms.uTime.value = t;
