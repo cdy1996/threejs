@@ -102,9 +102,44 @@ const surfaceFragment = /* glsl */ `
   uniform vec3 uDeepColor;
   uniform vec3 uSkyColor;
   uniform vec3 uSunDir;
+  uniform float uTime;
+  uniform float uRadius;
+  uniform float uFoamOn;
+  uniform float uFoamStrength;
+  uniform float uFoamScale;
+  uniform float uFoamEdge;
+  uniform float uFoamWake;
+  uniform vec2 uBoatPos;
+  uniform vec2 uBoatDir;
+  uniform float uBoatScale;
   varying vec3 vWorldPos;
   varying vec3 vNormal;
   varying float vWave;
+
+  // ---- 卡通厚泡沫噪声：value noise fbm，团块大、边缘圆润 ----
+  float hash12(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(hash12(i), hash12(i + vec2(1.0, 0.0)), u.x),
+      mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x),
+      u.y
+    );
+  }
+  float fbm(vec2 p) {
+    float s = 0.0, a = 0.55;
+    for (int i = 0; i < 3; i++) {
+      s += a * vnoise(p);
+      p = p * 2.17 + 19.19;
+      a *= 0.5;
+    }
+    return s;
+  }
 
   void main() {
     vec3 V = normalize(cameraPosition - vWorldPos);
@@ -128,6 +163,44 @@ const surfaceFragment = /* glsl */ `
       float specWide = pow(max(dot(R, uSunDir), 0.0), 24.0);
       col += vec3(1.0, 0.97, 0.88) * (spec * 1.5 + specWide * 0.16);
       alpha = 0.62 + fres * 0.3;
+
+      // ---------- 卡通厚泡沫 ----------
+      if (uFoamOn > 0.5) {
+        vec2 p = vWorldPos.xz;
+        vec2 drift = vec2(uTime * 0.10, -uTime * 0.07);
+        float blob = fbm(p * uFoamScale + drift);
+        float blob2 = fbm(p * uFoamScale * 2.4 - drift * 1.6 + 7.3);
+
+        // 1) 波峰泡沫：浪尖 + 陡坡处成团，噪声挖出絮状边缘
+        float crestM = smoothstep(0.45, 0.85, vWave) + (1.0 - n.y) * 1.2;
+        float f1 = smoothstep(0.60, 0.80, blob + crestM * 0.45);
+
+        // 2) 边缘泡沫：贴缸壁一圈并向内延伸，随角度与浪涌起伏
+        float rr = length(p) / uRadius;
+        float ringM = smoothstep(1.0 - uFoamEdge * 1.1, 1.0 - uFoamEdge * 0.45, rr);
+        float wobble = 0.5 + 0.5 * sin(atan(p.x, p.y) * 9.0 + uTime * 0.8 + vWave * 2.0);
+        float f2 = ringM * (0.55 + 0.45 * wobble) * smoothstep(0.45, 0.68, blob2);
+
+        // 3) 船尾尾迹：V 形扩散条带 + 船身周围湍流白沫
+        vec2 d = p - uBoatPos;
+        float lx = dot(d, uBoatDir);
+        float lz = dot(d, vec2(-uBoatDir.y, uBoatDir.x));
+        float behind = smoothstep(0.6, -0.4, lx);
+        float spread = (-lx) * 0.55 + 0.35;
+        float vband = exp(-pow(abs(lz) - spread * 0.75, 2.0) * 8.0);
+        float nearPatch = smoothstep(1.6 * uBoatScale, 0.2, length(d));
+        float distFade = smoothstep(5.0, 1.2, length(d));
+        float f3 = (vband + nearPatch * 0.9) * behind * distFade * uBoatScale;
+        f3 *= smoothstep(0.42, 0.62, blob);
+
+        float foam = clamp(f1 + f2 + f3 * uFoamWake, 0.0, 1.0) * uFoamStrength;
+        foam = clamp(foam, 0.0, 1.0);
+
+        // 厚泡沫：接近纯白的团块，团内按噪声留一点水色阴影
+        vec3 foamCol = vec3(0.99, 0.99, 0.97) * (0.9 + 0.1 * smoothstep(0.35, 0.75, blob));
+        col = mix(col, foamCol, foam * 0.95);
+        alpha = mix(alpha, 0.95, foam * 0.9);
+      }
     } else {
       // ---------- 水下仰视视角：通透水色，不发白 ----------
       vec3 n = normalize(-vNormal); // 翻转法线
@@ -221,7 +294,16 @@ export function createAquarium() {
       uSunDir: { value: sunDir },
       uTime: { value: 0 },
       uWaveAmp: { value: 0.2 },
-      uRadius: { value: TANK.waterRadius }
+      uRadius: { value: TANK.waterRadius },
+      // 泡沫
+      uFoamOn: { value: 1 },
+      uFoamStrength: { value: 1.0 },
+      uFoamScale: { value: 4.0 },
+      uFoamEdge: { value: 0.3 },
+      uFoamWake: { value: 1.0 },
+      uBoatPos: { value: new THREE.Vector2(-1.8, 0.6) },
+      uBoatDir: { value: new THREE.Vector2(Math.cos(0.5), -Math.sin(0.5)) },
+      uBoatScale: { value: 1.0 }
     },
     vertexShader: surfaceVertex,
     fragmentShader: surfaceFragment

@@ -22,6 +22,7 @@ app.appendChild(renderer.domElement);
 
 const cameraRig = createCameraRig(renderer, scene);
 const { camera, controls } = cameraRig;
+window.__cam = camera; // 调试：供浏览器验证用
 
 // ---------- 灯光（柔和卡通，无硬阴影） ----------
 const dirLight = new THREE.DirectionalLight(0xfff6e8, 1.0);
@@ -34,6 +35,7 @@ scene.add(hemi);
 // ---------- 场景内容 ----------
 const aquarium = createAquarium();
 scene.add(aquarium.group);
+window.__surfU = aquarium.surfaceMat.uniforms; // 调试：供浏览器验证用
 
 const seabed = createSeabed();
 scene.add(seabed.group);
@@ -58,6 +60,11 @@ const params = {
   fishSpeed: 1.0,
   waveAmp: 0.2,
   bubbleCount: 150,
+  foamOn: true,
+  foamStrength: 1.0,
+  foamScale: 4.0,
+  foamEdge: 0.3,
+  foamWake: 1.0,
   bgColor: '#8fd0cc'
 };
 
@@ -71,7 +78,18 @@ const fAnim = gui.addFolder('动画');
 fAnim.add(params, 'playIntro').name('播放运镜动画').onChange(v => (v ? cameraRig.playIntro() : cameraRig.stopIntro()));
 
 const fBoat = gui.addFolder('船');
-fBoat.add(params, 'boatScale', 0.4, 2.2, 0.01).name('大小').onChange(v => surfaceProps.setBoatScale(v));
+fBoat.add(params, 'boatScale', 0.4, 2.2, 0.01).name('大小').onChange(v => {
+  surfaceProps.setBoatScale(v);
+  aquarium.surfaceMat.uniforms.uBoatScale.value = v;
+});
+
+const fFoam = gui.addFolder('泡沫');
+const su = aquarium.surfaceMat.uniforms;
+fFoam.add(params, 'foamOn').name('开启').onChange(v => (su.uFoamOn.value = v ? 1 : 0));
+fFoam.add(params, 'foamStrength', 0, 2, 0.01).name('强度').onChange(v => (su.uFoamStrength.value = v));
+fFoam.add(params, 'foamScale', 2, 12, 0.1).name('细腻度').onChange(v => (su.uFoamScale.value = v));
+fFoam.add(params, 'foamEdge', 0.05, 0.6, 0.01).name('边缘宽度').onChange(v => (su.uFoamEdge.value = v));
+fFoam.add(params, 'foamWake', 0, 2, 0.01).name('船尾尾迹').onChange(v => (su.uFoamWake.value = v));
 
 const fFish = gui.addFolder('鱼群');
 fFish.add(params, 'fishCount', 100, 1500, 10).name('数量').onFinishChange(v => rebuildFish(v));
