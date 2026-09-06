@@ -62,8 +62,8 @@ const params = {
   bubbleCount: 150,
   foamOn: true,
   foamStrength: 1.0,
-  foamScale: 4.0,
-  foamEdge: 0.3,
+  foamScale: 2.6,
+  foamEdge: 0.22,
   foamWake: 1.0,
   bgColor: '#8fd0cc'
 };

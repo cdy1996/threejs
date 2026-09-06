@@ -164,24 +164,26 @@ const surfaceFragment = /* glsl */ `
       col += vec3(1.0, 0.97, 0.88) * (spec * 1.5 + specWide * 0.16);
       alpha = 0.62 + fres * 0.3;
 
-      // ---------- 卡通厚泡沫 ----------
+      // ---------- 卡通厚泡沫：低频大团块 + 窄过渡硬边 + 细节噪声咬边（沸腾感） ----------
       if (uFoamOn > 0.5) {
         vec2 p = vWorldPos.xz;
-        vec2 drift = vec2(uTime * 0.10, -uTime * 0.07);
-        float blob = fbm(p * uFoamScale + drift);
-        float blob2 = fbm(p * uFoamScale * 2.4 - drift * 1.6 + 7.3);
+        float t = uTime;
+        // 大尺度形状场（决定"哪里有大团"）+ 细节噪声（只负责腐蚀边缘）
+        float shapeN = fbm(p * uFoamScale + vec2(t * 0.08, -t * 0.05));
+        float detailN = fbm(p * uFoamScale * 3.1 - vec2(t * 0.12, t * 0.09) + 7.3);
 
-        // 1) 波峰泡沫：浪尖 + 陡坡处成团，噪声挖出絮状边缘
-        float crestM = smoothstep(0.45, 0.85, vWave) + (1.0 - n.y) * 1.2;
-        float f1 = smoothstep(0.60, 0.80, blob + crestM * 0.45);
+        // 1) 波峰泡沫：只在明显浪尖出现，窄过渡 → 边缘硬朗的连片大团
+        float crestM = smoothstep(0.55, 0.95, vWave) + (1.0 - n.y) * 1.3;
+        float field1 = shapeN + crestM * 0.6 + (detailN - 0.5) * 0.35;
+        float f1 = smoothstep(0.70, 0.78, field1);
 
-        // 2) 边缘泡沫：贴缸壁一圈并向内延伸，随角度与浪涌起伏
+        // 2) 边缘泡沫：厚实环带，内缘被圆齿 + 噪声咬出起伏
         float rr = length(p) / uRadius;
-        float ringM = smoothstep(1.0 - uFoamEdge * 1.1, 1.0 - uFoamEdge * 0.45, rr);
-        float wobble = 0.5 + 0.5 * sin(atan(p.x, p.y) * 9.0 + uTime * 0.8 + vWave * 2.0);
-        float f2 = ringM * (0.55 + 0.45 * wobble) * smoothstep(0.45, 0.68, blob2);
+        float scallop = 0.85 + 0.15 * sin(atan(p.x, p.y) * 8.0 + t * 0.6 + shapeN * 5.0);
+        float inner = 1.0 - uFoamEdge * scallop;
+        float f2 = smoothstep(inner, inner + 0.05, rr);
 
-        // 3) 船尾尾迹：V 形扩散条带 + 船身周围湍流白沫
+        // 3) 船尾尾迹：V 形扩散条带 + 船身周围湍流白沫，细节噪声咬边
         vec2 d = p - uBoatPos;
         float lx = dot(d, uBoatDir);
         float lz = dot(d, vec2(-uBoatDir.y, uBoatDir.x));
@@ -191,13 +193,13 @@ const surfaceFragment = /* glsl */ `
         float nearPatch = smoothstep(1.6 * uBoatScale, 0.2, length(d));
         float distFade = smoothstep(5.0, 1.2, length(d));
         float f3 = (vband + nearPatch * 0.9) * behind * distFade * uBoatScale;
-        f3 *= smoothstep(0.42, 0.62, blob);
+        f3 *= smoothstep(0.55, 0.65, shapeN + (detailN - 0.5) * 0.4 + nearPatch * 0.5);
 
-        float foam = clamp(f1 + f2 + f3 * uFoamWake, 0.0, 1.0) * uFoamStrength;
+        float foam = clamp(f1 + max(f2, f3 * uFoamWake), 0.0, 1.0) * uFoamStrength;
         foam = clamp(foam, 0.0, 1.0);
 
-        // 厚泡沫：接近纯白的团块，团内按噪声留一点水色阴影
-        vec3 foamCol = vec3(0.99, 0.99, 0.97) * (0.9 + 0.1 * smoothstep(0.35, 0.75, blob));
+        // 厚泡沫：接近纯白的团块，团内按形状噪声留一点水色阴影
+        vec3 foamCol = vec3(0.99, 0.99, 0.97) * (0.9 + 0.1 * shapeN);
         col = mix(col, foamCol, foam * 0.95);
         alpha = mix(alpha, 0.95, foam * 0.9);
       }
@@ -298,8 +300,8 @@ export function createAquarium() {
       // 泡沫
       uFoamOn: { value: 1 },
       uFoamStrength: { value: 1.0 },
-      uFoamScale: { value: 4.0 },
-      uFoamEdge: { value: 0.3 },
+      uFoamScale: { value: 2.6 },
+      uFoamEdge: { value: 0.22 },
       uFoamWake: { value: 1.0 },
       uBoatPos: { value: new THREE.Vector2(-1.8, 0.6) },
       uBoatDir: { value: new THREE.Vector2(Math.cos(0.5), -Math.sin(0.5)) },
