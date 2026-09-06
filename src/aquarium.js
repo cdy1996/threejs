@@ -25,6 +25,7 @@ const waterFragment = /* glsl */ `
   uniform float uWaterTopY;
   uniform float uWaterBottomY;
   uniform float uUnderwater;
+  uniform float uWaterOpacity;
   uniform float uTime;
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
@@ -43,7 +44,7 @@ const waterFragment = /* glsl */ `
       col = mix(col, uDeepColor, 0.7);
       alpha = max(alpha, mix(0.18, 0.62, uUnderwater));
     }
-    gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.92));
+    gl_FragColor = vec4(col, clamp(alpha * uWaterOpacity, 0.0, 0.95));
   }
 `;
 
@@ -105,6 +106,7 @@ const surfaceFragment = /* glsl */ `
   uniform float uTime;
   uniform float uRadius;
   uniform float uWaterTopY;
+  uniform float uOpacity;
   uniform float uFoamOn;
   uniform float uFoamStrength;
   uniform float uFoamScale;
@@ -153,13 +155,9 @@ const surfaceFragment = /* glsl */ `
       vec3 n = normalize(vNormal);
       vec2 p = vWorldPos.xz;
 
-      // 大尺度水色斑驳（深浅水团缓慢漂移，参考图的青绿渐变）
-      float waterPatch = fbm(p * 0.35 + vec2(uTime * 0.03, -uTime * 0.02));
-
       // 太阳漫反射：背光坡面压暗，迎光坡面提亮
       float ndl = max(dot(n, uSunDir), 0.0);
       col = mix(uDeepColor, uShallowColor, 0.45 + crest * 0.4);
-      col = mix(col, col * 1.3 + uShallowColor * 0.12, waterPatch * 0.55);
       col *= mix(0.72, 1.2, ndl);
 
       // 波峰透光（SSS 近似）：朝太阳方向看浪尖，透出亮青绿
@@ -174,7 +172,8 @@ const surfaceFragment = /* glsl */ `
       float spec = pow(max(dot(R, uSunDir), 0.0), 160.0);
       float specWide = pow(max(dot(R, uSunDir), 0.0), 24.0);
       col += vec3(1.0, 0.97, 0.88) * (spec * 1.5 + specWide * 0.16);
-      alpha = 0.62 + fres * 0.3;
+      // 不透明海面（参考图）：颜色完全由着色决定，不透出下面的鱼和海底
+      alpha = uOpacity;
 
       // ---------- 卡通厚泡沫：低频大团块 + 窄过渡硬边 + 细节噪声咬边（沸腾感） ----------
       if (uFoamOn > 0.5) {
@@ -214,7 +213,6 @@ const surfaceFragment = /* glsl */ `
         // 厚泡沫：接近纯白的团块，团内按形状噪声留一点水色阴影
         vec3 foamCol = vec3(0.99, 0.99, 0.97) * (0.9 + 0.1 * shapeN);
         col = mix(col, foamCol, foam * 0.95);
-        alpha = mix(alpha, 0.95, foam * 0.9);
       }
     } else {
       // ---------- 水下仰视视角（参考图：深蓝环境 + 太阳亮斑光晕 + 波面透光斑驳） ----------
@@ -243,7 +241,8 @@ const surfaceFragment = /* glsl */ `
       float sparkle = pow(fbm(vWorldPos.xz * 2.2 + vec2(uTime * 0.15, uTime * 0.1)), 3.0) * exp(-dSun * dSun * 0.5);
       col += vec3(1.0) * sparkle * 0.9;
 
-      alpha = 0.6;
+      // 仰视水面透明度同样可调（深蓝水体底 + 太阳亮斑）
+      alpha = uOpacity;
     }
 
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
@@ -301,6 +300,7 @@ export function createAquarium() {
       uWaterTopY: { value: TANK.waterTopY },
       uWaterBottomY: { value: TANK.waterBottomY },
       uUnderwater: { value: 0 },
+      uWaterOpacity: { value: 1.0 },
       uTime: { value: 0 }
     },
     vertexShader: waterVertex,
@@ -322,7 +322,7 @@ export function createAquarium() {
   const surfaceMat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
-    depthWrite: false,
+    depthWrite: true,
     uniforms: {
       uShallowColor: { value: new THREE.Color(COLORS.waterShallow) },
       uDeepColor: { value: new THREE.Color(COLORS.waterDeep) },
@@ -332,6 +332,7 @@ export function createAquarium() {
       uWaveAmp: { value: 0.2 },
       uRadius: { value: TANK.waterRadius },
       uWaterTopY: { value: TANK.waterTopY },
+      uOpacity: { value: 1.0 },
       // 泡沫
       uFoamOn: { value: 1 },
       uFoamStrength: { value: 1.0 },

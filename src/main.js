@@ -63,6 +63,8 @@ const params = {
   fishCount: 650,
   fishSpeed: 1.0,
   waveAmp: 0.2,
+  surfaceOpacity: 1.0,
+  waterOpacity: 1.0,
   bubbleCount: 150,
   foamOn: true,
   foamStrength: 1.0,
@@ -105,6 +107,12 @@ fBubble.add(params, 'bubbleCount', 0, 400, 1).name('数量').onChange(v => bubbl
 const fWater = gui.addFolder('水');
 fWater.add(params, 'waveAmp', 0, 0.4, 0.005).name('波浪幅度').onChange(v => {
   aquarium.surfaceMat.uniforms.uWaveAmp.value = v;
+});
+fWater.add(params, 'surfaceOpacity', 0.1, 1, 0.01).name('水面透明度').onChange(v => {
+  aquarium.surfaceMat.uniforms.uOpacity.value = v;
+});
+fWater.add(params, 'waterOpacity', 0.1, 1, 0.01).name('水体透明度').onChange(v => {
+  aquarium.waterMat.uniforms.uWaterOpacity.value = v;
 });
 
 const fEnv = gui.addFolder('环境');
