@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 // 屏幕空间引力透镜：把黑洞周围像素向中心弯折 + 轻微切向漩涡，
