@@ -104,6 +104,7 @@ const surfaceFragment = /* glsl */ `
   uniform vec3 uSunDir;
   uniform float uTime;
   uniform float uRadius;
+  uniform float uWaterTopY;
   uniform float uFoamOn;
   uniform float uFoamStrength;
   uniform float uFoamScale;
@@ -150,10 +151,21 @@ const surfaceFragment = /* glsl */ `
     if (gl_FrontFacing) {
       // ---------- 水面上方视角 ----------
       vec3 n = normalize(vNormal);
-      // 太阳漫反射：背光坡面压暗，迎光坡面提亮 → 俯视有明暗起伏
+      vec2 p = vWorldPos.xz;
+
+      // 大尺度水色斑驳（深浅水团缓慢漂移，参考图的青绿渐变）
+      float waterPatch = fbm(p * 0.35 + vec2(uTime * 0.03, -uTime * 0.02));
+
+      // 太阳漫反射：背光坡面压暗，迎光坡面提亮
       float ndl = max(dot(n, uSunDir), 0.0);
-      col = mix(uDeepColor, uShallowColor, 0.55 + crest * 0.45);
-      col *= mix(0.68, 1.22, ndl);
+      col = mix(uDeepColor, uShallowColor, 0.45 + crest * 0.4);
+      col = mix(col, col * 1.3 + uShallowColor * 0.12, waterPatch * 0.55);
+      col *= mix(0.72, 1.2, ndl);
+
+      // 波峰透光（SSS 近似）：朝太阳方向看浪尖，透出亮青绿
+      float sss = pow(max(dot(V, normalize(uSunDir + vec3(0.0, 0.35, 0.0))), 0.0), 3.0);
+      col += vec3(0.30, 0.85, 0.62) * sss * smoothstep(0.1, 1.0, vWave) * 0.65;
+
       // 菲涅尔天空反射（掠射角）
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
       col = mix(col, uSkyColor, fres * 0.7);
@@ -166,16 +178,17 @@ const surfaceFragment = /* glsl */ `
 
       // ---------- 卡通厚泡沫：低频大团块 + 窄过渡硬边 + 细节噪声咬边（沸腾感） ----------
       if (uFoamOn > 0.5) {
-        vec2 p = vWorldPos.xz;
         float t = uTime;
+        // 沿 X 拉长采样 → 条状浪沫（参考图的波峰泡沫条纹形态）
+        vec2 ps = vec2(p.x * 0.45, p.y);
         // 大尺度形状场（决定"哪里有大团"）+ 细节噪声（只负责腐蚀边缘）
-        float shapeN = fbm(p * uFoamScale + vec2(t * 0.08, -t * 0.05));
-        float detailN = fbm(p * uFoamScale * 3.1 - vec2(t * 0.12, t * 0.09) + 7.3);
+        float shapeN = fbm(ps * uFoamScale + vec2(t * 0.08, -t * 0.05));
+        float detailN = fbm(ps * uFoamScale * 3.1 - vec2(t * 0.12, t * 0.09) + 7.3);
 
-        // 1) 波峰泡沫：只在明显浪尖出现，窄过渡 → 边缘硬朗的连片大团
-        float crestM = smoothstep(0.55, 0.95, vWave) + (1.0 - n.y) * 1.3;
+        // 1) 波峰泡沫：浪尖处连片条状白沫
+        float crestM = smoothstep(0.45, 0.9, vWave) + (1.0 - n.y) * 1.3;
         float field1 = shapeN + crestM * 0.6 + (detailN - 0.5) * 0.35;
-        float f1 = smoothstep(0.70, 0.78, field1);
+        float f1 = smoothstep(0.66, 0.75, field1);
 
         // 2) 边缘泡沫：厚实环带，内缘被圆齿 + 噪声咬出起伏
         float rr = length(p) / uRadius;
@@ -204,12 +217,33 @@ const surfaceFragment = /* glsl */ `
         alpha = mix(alpha, 0.95, foam * 0.9);
       }
     } else {
-      // ---------- 水下仰视视角：通透水色，不发白 ----------
+      // ---------- 水下仰视视角（参考图：深蓝环境 + 太阳亮斑光晕 + 波面透光斑驳） ----------
       vec3 n = normalize(-vNormal); // 翻转法线
       float ndl = max(dot(n, uSunDir), 0.0);
-      col = mix(uDeepColor * 0.9, uShallowColor, 0.3 + crest * 0.25);
-      col *= mix(0.82, 1.05, ndl);
-      alpha = 0.5;
+
+      // 深水基色：深蓝（线性值直接写，sRGB 输出后为中深蓝），波面斜度带来明暗
+      vec3 deepBlue = vec3(0.010, 0.060, 0.100);
+      vec3 litBlue  = vec3(0.030, 0.150, 0.220);
+      col = mix(deepBlue, litBlue, ndl * 0.7 + 0.3);
+
+      // 大尺度透光斑驳（波面折射的明暗斑块，缓慢漂移）
+      float mottle = fbm(vWorldPos.xz * 0.9 + vec2(uTime * 0.06, -uTime * 0.045));
+      col *= 0.5 + 0.6 * smoothstep(0.3, 0.8, mottle);
+
+      // 浪尖下方透光更亮
+      col += vec3(0.08, 0.22, 0.24) * max(vWave, 0.0);
+
+      // 太阳亮斑（小而集中）+ 适度光晕（Snell 窗近似：太阳方向与水面平面的交点）
+      vec3 sunSurf = cameraPosition + uSunDir * ((uWaterTopY - cameraPosition.y) / max(uSunDir.y, 0.25));
+      float dSun = length(vWorldPos.xz - sunSurf.xz);
+      float glow = exp(-dSun * dSun * 1.6) * 1.25 + exp(-dSun * dSun * 0.6) * 0.22;
+      col += vec3(1.0, 0.98, 0.9) * glow;
+
+      // 太阳周围的碎亮斑（水面皱褶闪烁），只出现在亮斑附近
+      float sparkle = pow(fbm(vWorldPos.xz * 2.2 + vec2(uTime * 0.15, uTime * 0.1)), 3.0) * exp(-dSun * dSun * 0.5);
+      col += vec3(1.0) * sparkle * 0.9;
+
+      alpha = 0.6;
     }
 
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
@@ -297,6 +331,7 @@ export function createAquarium() {
       uTime: { value: 0 },
       uWaveAmp: { value: 0.2 },
       uRadius: { value: TANK.waterRadius },
+      uWaterTopY: { value: TANK.waterTopY },
       // 泡沫
       uFoamOn: { value: 1 },
       uFoamStrength: { value: 1.0 },

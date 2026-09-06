@@ -23,6 +23,8 @@ app.appendChild(renderer.domElement);
 const cameraRig = createCameraRig(renderer, scene);
 const { camera, controls } = cameraRig;
 window.__cam = camera; // 调试：供浏览器验证用
+window.__ctl = controls;
+window.__scene = scene;
 
 // ---------- 灯光（柔和卡通，无硬阴影） ----------
 const dirLight = new THREE.DirectionalLight(0xfff6e8, 1.0);
@@ -36,6 +38,7 @@ scene.add(hemi);
 const aquarium = createAquarium();
 scene.add(aquarium.group);
 window.__surfU = aquarium.surfaceMat.uniforms; // 调试：供浏览器验证用
+window.__aq = aquarium.group;
 
 const seabed = createSeabed();
 scene.add(seabed.group);
@@ -45,6 +48,7 @@ scene.add(fishSchool.mesh);
 
 const bubbles = createBubbles();
 scene.add(bubbles.points);
+window.__bubbles = bubbles; // 调试：供浏览器验证用
 
 const surfaceProps = createSurfaceProps();
 scene.add(surfaceProps.group);
