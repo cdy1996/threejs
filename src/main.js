@@ -65,6 +65,10 @@ const params = {
   waveAmp: 0.2,
   surfaceOpacity: 1.0,
   waterOpacity: 1.0,
+  surfaceShallow: '#7fdecd',
+  surfaceDeep: '#0c5f6a',
+  underBlue1: '#1f475a',
+  underBlue2: '#346c80',
   bubbleCount: 150,
   foamOn: true,
   foamStrength: 1.0,
@@ -113,6 +117,18 @@ fWater.add(params, 'surfaceOpacity', 0.1, 1, 0.01).name('水面透明度').onCha
 });
 fWater.add(params, 'waterOpacity', 0.1, 1, 0.01).name('水体透明度').onChange(v => {
   aquarium.waterMat.uniforms.uWaterOpacity.value = v;
+});
+fWater.addColor(params, 'surfaceShallow').name('水面亮色').onChange(v => {
+  aquarium.surfaceMat.uniforms.uShallowColor.value.set(v);
+});
+fWater.addColor(params, 'surfaceDeep').name('水面深色').onChange(v => {
+  aquarium.surfaceMat.uniforms.uDeepColor.value.set(v);
+});
+fWater.addColor(params, 'underBlue1').name('仰视深蓝').onChange(v => {
+  aquarium.surfaceMat.uniforms.uUnderBlue1.value.set(v);
+});
+fWater.addColor(params, 'underBlue2').name('仰视亮蓝').onChange(v => {
+  aquarium.surfaceMat.uniforms.uUnderBlue2.value.set(v);
 });
 
 const fEnv = gui.addFolder('环境');

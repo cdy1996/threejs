@@ -103,6 +103,8 @@ const surfaceFragment = /* glsl */ `
   uniform vec3 uDeepColor;
   uniform vec3 uSkyColor;
   uniform vec3 uSunDir;
+  uniform vec3 uUnderBlue1;
+  uniform vec3 uUnderBlue2;
   uniform float uTime;
   uniform float uRadius;
   uniform float uWaterTopY;
@@ -219,17 +221,15 @@ const surfaceFragment = /* glsl */ `
       vec3 n = normalize(-vNormal); // 翻转法线
       float ndl = max(dot(n, uSunDir), 0.0);
 
-      // 深水基色：深蓝（线性值直接写，sRGB 输出后为中深蓝），波面斜度带来明暗
-      vec3 deepBlue = vec3(0.010, 0.060, 0.100);
-      vec3 litBlue  = vec3(0.030, 0.150, 0.220);
-      col = mix(deepBlue, litBlue, ndl * 0.7 + 0.3);
+      // 深水基色：颜色可在 GUI 调节（GUI 输入 sRGB，Color 管理自动转线性），波面斜度带来明暗
+      col = mix(uUnderBlue1, uUnderBlue2, ndl * 0.7 + 0.3);
 
       // 大尺度透光斑驳（波面折射的明暗斑块，缓慢漂移）
       float mottle = fbm(vWorldPos.xz * 0.9 + vec2(uTime * 0.06, -uTime * 0.045));
       col *= 0.5 + 0.6 * smoothstep(0.3, 0.8, mottle);
 
-      // 浪尖下方透光更亮
-      col += vec3(0.08, 0.22, 0.24) * max(vWave, 0.0);
+      // 浪尖下方透光更亮（跟随仰视亮色）
+      col += uUnderBlue2 * 1.4 * max(vWave, 0.0);
 
       // 太阳亮斑（小而集中）+ 适度光晕（Snell 窗近似：太阳方向与水面平面的交点）
       vec3 sunSurf = cameraPosition + uSunDir * ((uWaterTopY - cameraPosition.y) / max(uSunDir.y, 0.25));
@@ -333,6 +333,8 @@ export function createAquarium() {
       uRadius: { value: TANK.waterRadius },
       uWaterTopY: { value: TANK.waterTopY },
       uOpacity: { value: 1.0 },
+      uUnderBlue1: { value: new THREE.Color(0.010, 0.060, 0.100) },
+      uUnderBlue2: { value: new THREE.Color(0.030, 0.150, 0.220) },
       // 泡沫
       uFoamOn: { value: 1 },
       uFoamStrength: { value: 1.0 },
