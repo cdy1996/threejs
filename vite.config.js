@@ -13,7 +13,8 @@ export default defineConfig({
       input: {
         main: resolve(fileURLToPath(new URL('.', import.meta.url)), 'index.html'),
         blackhole: resolve(fileURLToPath(new URL('.', import.meta.url)), 'blackhole.html'),
-        formulaBlackhole: resolve(fileURLToPath(new URL('.', import.meta.url)), 'formula-blackhole.html')
+        formulaBlackhole: resolve(fileURLToPath(new URL('.', import.meta.url)), 'formula-blackhole.html'),
+        fire: resolve(fileURLToPath(new URL('.', import.meta.url)), 'fire.html')
       }
     }
   }

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>智慧消防可视化管理系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --cyan: #2ec9ff;
+    --cyan-dim: rgba(46, 201, 255, .35);
+    --panel-bg: linear-gradient(160deg, rgba(10, 32, 72, .72), rgba(6, 18, 44, .55));
+    --text-main: #d7ecff;
+    --text-dim: #7fa8d8;
+    --red: #ff4d5e;
+    --green: #37e2a0;
+    --yellow: #ffc53d;
+  }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #02060f; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    color: var(--text-main);
+    user-select: none;
+  }
+
+  /* ===== 3D 画布层 ===== */
+  #scene-container { position: fixed; inset: 0; z-index: 0; }
+  #scene-container canvas { display: block; }
+  #label-layer { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+  .floor-label {
+    font-size: 11px; color: #9fd8ff; letter-spacing: 1px;
+    text-shadow: 0 0 6px rgba(46,201,255,.8);
+    white-space: nowrap; transform: translateX(-100%);
+  }
+  .floor-label.alarm { color: #ff5b6a; font-weight: bold; text-shadow: 0 0 8px rgba(255,60,80,.9); }
+
+  /* ===== 整体 UI 层 ===== */
+  #ui { position: fixed; inset: 0; z-index: 2; display: flex; flex-direction: column; pointer-events: none; }
+  #ui .panel, #ui header, #ui nav { pointer-events: auto; }
+
+  /* ===== 顶部 ===== */
+  header {
+    height: 78px; flex: none; position: relative;
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding: 14px 28px 0;
+    background: linear-gradient(180deg, rgba(6,20,50,.9), rgba(6,20,50,0));
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; font-size: 14px; color: var(--text-dim); }
+  .header-left .temp { color: var(--text-main); font-size: 15px; }
+  .header-right { display: flex; align-items: center; gap: 26px; font-size: 14px; color: var(--text-dim); }
+  .header-right .item { display: flex; align-items: center; gap: 6px; cursor: pointer; position: relative; }
+  .header-right .item:hover { color: var(--cyan); }
+  .badge {
+    position: absolute; top: -6px; left: 10px; min-width: 15px; height: 15px;
+    background: var(--red); border-radius: 8px; font-size: 10px; color: #fff;
+    display: flex; align-items: center; justify-content: center; padding: 0 3px;
+  }
+  .header-title {
+    position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+    text-align: center;
+  }
+  .header-title h1 {
+    font-size: 34px; letter-spacing: 10px; font-weight: bold;
+    background: linear-gradient(180deg, #fff, #8fd6ff);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    text-shadow: 0 0 24px rgba(46,201,255,.35);
+    padding: 0 40px;
+  }
+  .header-title .wing {
+    position: absolute; top: 50%; width: 180px; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--cyan));
+  }
+  .header-title .wing.l { right: 100%; transform: translateY(-50%) skewY(-8deg); }
+  .header-title .wing.r { left: 100%; transform: translateY(-50%) skewY(8deg); background: linear-gradient(90deg, var(--cyan), transparent); }
+
+  /* ===== 主体三列 ===== */
+  main { flex: 1; display: flex; justify-content: space-between; padding: 6px 18px 0; min-height: 0; }
+  .col { width: 392px; flex: none; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .col.center { flex: 1; pointer-events: none; }
+
+  /* ===== 面板通用 ===== */
+  .panel {
+    position: relative;
+    background: var(--panel-bg);
+    border: 1px solid rgba(46, 201, 255, .22);
+    padding: 10px 14px 12px;
+    clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  }
+  .panel::before, .panel::after {
+    content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none;
+  }
+  .panel::before { top: -1px; left: -1px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
+  .panel::after { bottom: -1px; right: -1px; border-bottom: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
+  .panel-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; color: #bfe6ff; letter-spacing: 2px; margin-bottom: 8px;
+  }
+  .panel-title::before {
+    content: ""; width: 4px; height: 14px;
+    background: linear-gradient(180deg, var(--cyan), transparent);
+    box-shadow: 0 0 8px var(--cyan);
+  }
+  .panel-title .more { margin-left: auto; font-size: 11px; color: var(--text-dim); letter-spacing: 0; cursor: pointer; }
+
+  .kv { display: flex; font-size: 13px; line-height: 24px; }
+  .kv .k { width: 74px; color: var(--text-dim); flex: none; }
+  .kv .v { color: var(--text-main); }
+
+  .btn {
+    display: inline-block; margin-top: 6px; padding: 4px 18px; font-size: 12px;
+    color: var(--cyan); border: 1px solid var(--cyan-dim); cursor: pointer;
+    background: rgba(46,201,255,.08); letter-spacing: 2px;
+  }
+  .btn:hover { background: rgba(46,201,255,.2); }
+
+  /* 建筑信息 */
+  .binfo { display: flex; gap: 12px; }
+  .binfo .thumb {
+    width: 108px; height: 92px; flex: none; border: 1px solid var(--cyan-dim);
+    background:
+      radial-gradient(ellipse at 50% 80%, rgba(46,201,255,.35), transparent 60%),
+      linear-gradient(180deg, #0a1e42, #061226);
+    position: relative; overflow: hidden;
+  }
+  .binfo .thumb::after {
+    content: ""; position: absolute; left: 50%; bottom: 8px; width: 26px; height: 64px;
+    transform: translateX(-50%);
+    background: linear-gradient(180deg, rgba(120,220,255,.9), rgba(40,120,220,.4));
+    clip-path: polygon(20% 0, 80% 0, 100% 100%, 0 100%);
+    box-shadow: 0 0 18px rgba(46,201,255,.8);
+  }
+
+  /* 环形图 */
+  .donut-wrap { display: flex; align-items: center; gap: 16px; }
+  .donut-box { position: relative; width: 118px; height: 118px; flex: none; }
+  .donut-box .center-num {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .center-num b { font-size: 24px; color: #fff; text-shadow: 0 0 12px rgba(46,201,255,.8); }
+  .center-num span { font-size: 11px; color: var(--text-dim); }
+  .legend { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 12px; }
+  .legend .li { display: flex; align-items: center; gap: 6px; color: var(--text-dim); }
+  .legend .dot { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .legend .num { margin-left: auto; color: var(--text-main); }
+
+  /* 警情统计 */
+  .alarm-nums { display: flex; gap: 10px; margin-bottom: 6px; }
+  .alarm-nums .cell {
+    flex: 1; text-align: center; padding: 6px 0;
+    background: rgba(46,201,255,.06); border: 1px solid rgba(46,201,255,.15);
+  }
+  .alarm-nums .cell b { display: block; font-size: 22px; }
+  .alarm-nums .cell span { font-size: 11px; color: var(--text-dim); }
+  .alarm-nums .c1 b { color: var(--cyan); } .alarm-nums .c2 b { color: var(--red); } .alarm-nums .c3 b { color: var(--green); }
+
+  /* 设备运行状态图标行 */
+  .dev-row { display: flex; justify-content: space-between; }
+  .dev-cell { text-align: center; width: 64px; }
+  .dev-cell .ico {
+    width: 46px; height: 46px; margin: 0 auto 4px; border-radius: 50%;
+    border: 1px solid var(--cyan-dim); background: rgba(46,201,255,.08);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: inset 0 0 12px rgba(46,201,255,.25);
+  }
+  .dev-cell .name { font-size: 11px; color: var(--text-dim); }
+  .dev-cell .n { font-size: 14px; color: var(--text-main); }
+  .dev-cell .n i { font-style: normal; font-size: 10px; color: var(--text-dim); }
+
+  /* 用水监测 */
+  .water-nums { display: flex; gap: 10px; margin-bottom: 4px; }
+  .water-nums .cell {
+    flex: 1; display: flex; align-items: center; gap: 8px; padding: 5px 10px;
+    background: rgba(46,201,255,.06); border: 1px solid rgba(46,201,255,.15); font-size: 12px;
+  }
+  .water-nums b { font-size: 18px; color: #fff; }
+  .water-nums i { font-style: normal; color: var(--text-dim); font-size: 11px; }
+
+  /* 系统联动状态 */
+  .link-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 4px; }
+  .link-cell { text-align: center; }
+  .link-cell .ico {
+    width: 44px; height: 44px; margin: 0 auto 3px;
+    border: 1px solid var(--cyan-dim); background: rgba(46,201,255,.08);
+    display: flex; align-items: center; justify-content: center; border-radius: 4px;
+    box-shadow: inset 0 0 10px rgba(46,201,255,.2);
+  }
+  .link-cell .name { font-size: 11px; color: var(--text-main); }
+  .link-cell .st { font-size: 10px; }
+  .st.ok { color: var(--green); } .st.run { color: var(--cyan); } .st.warn { color: var(--yellow); }
+
+  /* 火警确认 */
+  .confirm-row { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 26px; }
+  .confirm-row .dot-alarm { width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 8px var(--red); flex: none; }
+  .confirm-row .t { margin-left: auto; color: var(--text-dim); }
+
+  /* 疏散引导 */
+  .exit-box { display: flex; align-items: center; gap: 14px; }
+  .exit-ico {
+    width: 52px; height: 52px; flex: none; border-radius: 50%;
+    border: 2px solid var(--green); display: flex; align-items: center; justify-content: center;
+    background: rgba(55,226,160,.12); box-shadow: 0 0 16px rgba(55,226,160,.4);
+  }
+  .exit-info { flex: 1; font-size: 12px; color: var(--text-dim); line-height: 22px; }
+  .exit-info b { color: #fff; font-size: 18px; margin: 0 4px; }
+
+  .evac-wrap { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .evac-nums { flex: 1; display: flex; flex-direction: column; gap: 3px; font-size: 12px; }
+  .evac-nums .row { display: flex; justify-content: space-between; color: var(--text-dim); }
+  .evac-nums .row b { color: var(--text-main); }
+
+  /* 历史报警记录 */
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { color: var(--text-dim); font-weight: normal; padding: 4px 2px; border-bottom: 1px solid rgba(46,201,255,.15); }
+  td { padding: 4px 2px; text-align: center; color: var(--text-main); border-bottom: 1px dashed rgba(46,201,255,.08); }
+  .tag { padding: 1px 6px; font-size: 11px; border-radius: 2px; }
+  .tag.done { color: var(--green); border: 1px solid rgba(55,226,160,.4); }
+  .tag.doing { color: var(--yellow); border: 1px solid rgba(255,197,61,.4); }
+
+  /* ===== 底部导航 ===== */
+  nav {
+    flex: none; height: 82px; display: flex; justify-content: center; align-items: center; gap: 6px;
+    background: linear-gradient(0deg, rgba(6,20,50,.95), rgba(6,20,50,0));
+  }
+  .nav-item {
+    width: 108px; text-align: center; cursor: pointer; padding: 8px 0 10px;
+    color: var(--text-dim); font-size: 13px; letter-spacing: 2px;
+    border: 1px solid transparent; position: relative;
+  }
+  .nav-item .nico { width: 26px; height: 26px; margin: 0 auto 4px; display: flex; align-items: center; justify-content: center; }
+  .nav-item:hover { color: var(--text-main); }
+  .nav-item.active {
+    color: #fff; border-color: var(--cyan-dim);
+    background: linear-gradient(180deg, rgba(46,201,255,.22), rgba(46,201,255,.04));
+    box-shadow: 0 0 18px rgba(46,201,255,.25) inset;
+  }
+
+  .scroll-thin::-webkit-scrollbar { width: 4px; }
+  .scroll-thin::-webkit-scrollbar-thumb { background: var(--cyan-dim); }
+</style>
+</head>
+<body>
+
+<div id="scene-container"></div>
+<div id="label-layer"></div>
+
+<div id="ui">
+  <!-- ===== 顶部 ===== -->
+  <header>
+    <div class="header-left">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M6 14a5 5 0 1 1 1.3-9.86A6 6 0 0 1 18.6 6.6 4.5 4.5 0 0 1 18 15.5H7" stroke="#7fa8d8" stroke-width="1.5"/></svg>
+      <span class="temp">15~22°C</span>
+      <span id="clock-date">2024-05-20 15:30:45</span>
+      <span id="clock-week">星期一</span>
+    </div>
+    <div class="header-title">
+      <div class="wing l"></div><div class="wing r"></div>
+      <h1>智慧消防可视化管理系统</h1>
+    </div>
+    <div class="header-right">
+      <div class="item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 3 2.5 20h19L12 3z" stroke="currentColor" stroke-width="1.5"/><path d="M12 10v4" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="17" r=".8" fill="currentColor"/></svg>
+        预警中心<span class="badge">3</span>
+      </div>
+      <div class="item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M4 5h16v11H8l-4 4V5z" stroke="currentColor" stroke-width="1.5"/></svg>
+        消息中心
+      </div>
+      <div class="item">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 4h5v16h-5M10 8l-4 4 4 4M6 12h9" stroke="currentColor" stroke-width="1.5"/></svg>
+        退出登录
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== 主体 ===== -->
+  <main>
+    <!-- 左列 -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-title">建筑信息</div>
+        <div class="binfo">
+          <div class="thumb"></div>
+          <div style="flex:1">
+            <div class="kv"><span class="k">建筑名称</span><span class="v">智慧大厦</span></div>
+            <div class="kv"><span class="k">建筑高度</span><span class="v">128.6 m</span></div>
+            <div class="kv"><span class="k">建筑面积</span><span class="v">86,000 ㎡</span></div>
+            <div class="kv"><span class="k">地上楼层</span><span class="v">28 层</span></div>
+            <div class="kv"><span class="k">投入使用</span><span class="v">2020 年 6 月</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">消防设施概况</div>
+        <div class="donut-wrap">
+          <div class="donut-box" id="donut-facility">
+            <div class="center-num"><b>1286</b><span>总数</span></div>
+          </div>
+          <div class="legend">
+            <div class="li"><span class="dot" style="background:#2ec9ff"></span>正常<span class="num">1042 (81.0%)</span></div>
+            <div class="li"><span class="dot" style="background:#ffc53d"></span>故障<span class="num">85 (6.6%)</span></div>
+            <div class="li"><span class="dot" style="background:#ff4d5e"></span>报警<span class="num">28 (2.2%)</span></div>
+            <div class="li"><span class="dot" style="background:#5a7ba6"></span>离线<span class="num">131 (10.2%)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">火灾警情统计</div>
+        <div class="alarm-nums">
+          <div class="cell c1"><b>28</b><span>今日警情</span></div>
+          <div class="cell c2"><b>6</b><span>待处理</span></div>
+          <div class="cell c3"><b>22</b><span>已处理</span></div>
+        </div>
+        <div id="bar-alarm"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">设备运行状态</div>
+        <div class="dev-row" id="dev-row"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">消防用水监测</div>
+        <div class="water-nums">
+          <div class="cell">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3c3.5 4.5 6 8 6 11a6 6 0 1 1-12 0c0-3 2.5-6.5 6-11z" stroke="#2ec9ff" stroke-width="1.5"/></svg>
+            <div><b>0.65</b> <i>MPa</i><div style="font-size:11px;color:var(--text-dim)">水压</div></div>
+          </div>
+          <div class="cell">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 9c2-1.5 4-1.5 6 0s4 1.5 6 0 3-1.3 4 0M4 14c2-1.5 4-1.5 6 0s4 1.5 6 0 3-1.3 4 0M4 19c2-1.5 4-1.5 6 0s4 1.5 6 0 3-1.3 4 0" stroke="#2ec9ff" stroke-width="1.5"/></svg>
+            <div><b>2.36</b> <i>m</i><div style="font-size:11px;color:var(--text-dim)">水位</div></div>
+          </div>
+        </div>
+        <div id="line-water"></div>
+      </div>
+    </div>
+
+    <div class="col center"></div>
+
+    <!-- 右列 -->
+    <div class="col">
+      <div class="panel">
+        <div class="panel-title">系统联动状态</div>
+        <div class="link-grid" id="link-grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">火警确认</div>
+        <div class="confirm-row"><span class="dot-alarm"></span>感烟探测器<span class="t">触发时间 15:24:32</span></div>
+        <div class="confirm-row"><span class="dot-alarm"></span>感温探测器<span class="t">触发时间 15:24:30</span></div>
+        <div style="text-align:center"><span class="btn">查看详情</span></div>
+      </div>
+
+      <div style="display:flex;gap:10px">
+        <div class="panel" style="flex:1.1">
+          <div class="panel-title">位置信息</div>
+          <div class="kv"><span class="k">楼层</span><span class="v">16F</span></div>
+          <div class="kv"><span class="k">房间</span><span class="v">1612 办公室</span></div>
+          <div class="kv"><span class="k">面积</span><span class="v">128 ㎡</span></div>
+          <div class="kv"><span class="k">责任人</span><span class="v">张三 138****8888</span></div>
+          <div style="text-align:center"><span class="btn">查看平面图</span></div>
+        </div>
+        <div class="panel" style="flex:1">
+          <div class="panel-title">疏散引导</div>
+          <div class="exit-box">
+            <div class="exit-ico">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M10 4h8v16h-8M13 12H3m4-4-4 4 4 4" stroke="#37e2a0" stroke-width="1.8"/></svg>
+            </div>
+            <div class="exit-info">
+              最近安全出口<br>距离<b>45</b>m　方向<b>西南</b>
+            </div>
+          </div>
+          <div style="text-align:center"><span class="btn">查看疏散路线</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">疏散人数统计</div>
+        <div class="evac-wrap">
+          <div class="donut-box" id="donut-evac" style="width:96px;height:96px">
+            <div class="center-num"><b style="font-size:20px">79%</b><span>已疏散</span></div>
+          </div>
+          <div class="evac-nums">
+            <div class="row"><span>总人数</span><b>1248 人</b></div>
+            <div class="row"><span>已疏散</span><b style="color:var(--green)">986 人</b></div>
+            <div class="row"><span>未疏散</span><b style="color:var(--red)">262 人</b></div>
+          </div>
+        </div>
+        <div style="text-align:center"><span class="btn">查看详情</span></div>
+      </div>
+
+      <div class="panel" style="flex:1;min-height:0;overflow:auto">
+        <div class="panel-title">历史报警记录<span class="more">查看更多 &gt;</span></div>
+        <table>
+          <thead><tr><th>时间</th><th>位置</th><th>类型</th><th>状态</th></tr></thead>
+          <tbody id="alarm-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== 底部导航 ===== -->
+  <nav id="bottom-nav"></nav>
+</div>
+
+<script type="module" src="/src/fire/main.js"></script>
+<script type="module" src="/src/fire/charts.js"></script>
+</body>
+</html>
