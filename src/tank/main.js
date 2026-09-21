@@ -8,9 +8,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
  * ============================================================ */
 
 // ---------- 常量 ----------
-const TANK_SIZE = 6;          // 水缸截面边长
+const TANK_SIZE = 6;          // 玻璃缸截面边长
+const WATER_SIZE = 5.7;       // 水体截面边长（与玻璃壁之间留浅白间隔）
 const WATER_TOP = 1.9;        // 水面高度
 const TANK_BOTTOM = -2.0;     // 水缸内底
+const WALL_TOP = WATER_TOP + 0.28; // 玻璃壁顶（略高于水面）
 const timeUniform = { value: 0 };
 
 // ---------- 渲染器 / 场景 / 相机 ----------
@@ -92,23 +94,68 @@ function waveHeight(x, z, t) {
   scene.add(baseGroup);
 }
 
-// ---------- 水体（透明玻璃水柱，壁面略高于水面） ----------
+// ---------- 玻璃壁 + 水体（两层结构，中间留浅白间隔） ----------
 {
-  const wallTop = WATER_TOP + 0.28;
-  const h = wallTop - TANK_BOTTOM;
+  const hWall = WALL_TOP - TANK_BOTTOM;
+
+  // 外层玻璃盒：近白色、极低透明度，只负责反光轮廓
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color: 0xeaf6f2,
+    transparent: true,
+    opacity: 0.1,
+    roughness: 0.05,
+    metalness: 0,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  });
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, hWall, TANK_SIZE), glassMat);
+  glass.position.y = TANK_BOTTOM + hWall / 2;
+  glass.renderOrder = 12;
+  scene.add(glass);
+
+  // 内部水体：比玻璃壁内缩一圈，颜色更饱和
+  const hWater = WALL_TOP - 0.05 - TANK_BOTTOM;
   const waterMat = new THREE.MeshPhysicalMaterial({
     color: 0x2fa89e,
     transparent: true,
-    opacity: 0.32,
+    opacity: 0.3,
     roughness: 0.08,
     metalness: 0,
     side: THREE.DoubleSide,
     depthWrite: false
   });
-  const waterBody = new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, h, TANK_SIZE), waterMat);
-  waterBody.position.y = TANK_BOTTOM + h / 2;
+  const waterBody = new THREE.Mesh(new THREE.BoxGeometry(WATER_SIZE, hWater, WATER_SIZE), waterMat);
+  waterBody.position.y = TANK_BOTTOM + hWater / 2;
   waterBody.renderOrder = 10;
   scene.add(waterBody);
+
+  // 水线（meniscus）：沿玻璃内壁一圈浅白细条
+  const meniscusMat = new THREE.MeshBasicMaterial({ color: 0xe8faf4, transparent: true, opacity: 0.4, depthWrite: false });
+  const mkStrip = (w, d, x, z) => {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), meniscusMat);
+    s.position.set(x, WATER_TOP + 0.02, z);
+    s.renderOrder = 13;
+    scene.add(s);
+  };
+  const inner = TANK_SIZE / 2 - 0.03;
+  mkStrip(TANK_SIZE - 0.05, 0.05, 0, inner);
+  mkStrip(TANK_SIZE - 0.05, 0.05, 0, -inner);
+  mkStrip(0.05, TANK_SIZE - 0.05, inner, 0);
+  mkStrip(0.05, TANK_SIZE - 0.05, -inner, 0);
+
+  // 玻璃顶沿亮框（玻璃厚度反光）
+  const rimMat = new THREE.MeshBasicMaterial({ color: 0xf2fffb, transparent: true, opacity: 0.5, depthWrite: false });
+  const mkRim = (w, d, x, z) => {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), rimMat);
+    s.position.set(x, WALL_TOP, z);
+    s.renderOrder = 13;
+    scene.add(s);
+  };
+  const outer = TANK_SIZE / 2;
+  mkRim(TANK_SIZE + 0.04, 0.07, 0, outer);
+  mkRim(TANK_SIZE + 0.04, 0.07, 0, -outer);
+  mkRim(0.07, TANK_SIZE + 0.04, outer, 0);
+  mkRim(0.07, TANK_SIZE + 0.04, -outer, 0);
 
   // 底部封口（不透明，防止看穿）
   const bottom = new THREE.Mesh(
@@ -119,41 +166,120 @@ function waveHeight(x, z, t) {
   scene.add(bottom);
 }
 
-// ---------- 波浪水面 ----------
-const waterSurface = (() => {
-  const seg = 88;
-  const geo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, seg, seg);
+// ---------- 波浪水面（独立 ShaderMaterial：波高明暗 + 高光闪斑 + 泡沫） ----------
+// 顶点波浪公式与 JS 的 waveHeight 保持同一组常数，保证船体浮力同步
+{
+  const seg = 110;
+  const geo = new THREE.PlaneGeometry(WATER_SIZE, WATER_SIZE, seg, seg);
   geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0x8fe0d6,
+
+  const waterShaderMat = new THREE.ShaderMaterial({
     transparent: true,
-    opacity: 0.55,
-    roughness: 0.12,
-    metalness: 0.05,
+    depthWrite: false,
     side: THREE.DoubleSide,
-    depthWrite: false
+    uniforms: {
+      uTime: timeUniform,
+      uSunDir: { value: new THREE.Vector3(6, 10, 4).normalize() }, // 与 keyLight 一致
+      uDeep: { value: new THREE.Color(0x1f8a84) },    // 波谷深青
+      uShallow: { value: new THREE.Color(0x86ddd2) }, // 波峰浅青
+      uSky: { value: new THREE.Color(0xd8f6ef) }      // Fresnel 掠射白
+    },
+    vertexShader: /* glsl */`
+      uniform float uTime;
+      varying vec3 vWorldPos;
+      varying vec3 vNormal;
+      varying float vH;
+
+      float waveH(vec2 p, float t) {
+        return sin(p.x * 1.5 + t * 1.3) * 0.07
+             + cos(p.y * 1.9 + t * 1.05) * 0.055
+             + sin((p.x + p.y) * 1.1 + t * 1.9) * 0.04;
+      }
+
+      void main() {
+        vec3 pos = position; // 平面已旋转：xz 为平面坐标，y 朝上
+        float h = waveH(pos.xz, uTime);
+        float e = 0.12;
+        float hx = waveH(pos.xz + vec2(e, 0.0), uTime) - h;
+        float hz = waveH(pos.xz + vec2(0.0, e), uTime) - h;
+        pos.y += h;
+        vNormal = normalize(vec3(-hx / e, 1.0, -hz / e));
+        vH = h;
+        vec4 wp = modelMatrix * vec4(pos, 1.0);
+        vWorldPos = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: /* glsl */`
+      uniform float uTime;
+      uniform vec3 uSunDir;
+      uniform vec3 uDeep;
+      uniform vec3 uShallow;
+      uniform vec3 uSky;
+      varying vec3 vWorldPos;
+      varying vec3 vNormal;
+      varying float vH;
+
+      float hash(vec2 p) {
+        return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+      }
+      float vnoise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+                   mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+      }
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float a = 0.5;
+        for (int i = 0; i < 3; i++) {
+          v += vnoise(p) * a;
+          p *= 2.1;
+          a *= 0.5;
+        }
+        return v;
+      }
+
+      void main() {
+        vec3 N = normalize(vNormal);
+        vec3 V = normalize(cameraPosition - vWorldPos);
+
+        // 基色：波峰亮、波谷暗
+        vec3 col = mix(uDeep, uShallow, smoothstep(-0.12, 0.14, vH));
+
+        // Fresnel：掠射角泛白
+        float fres = pow(1.0 - max(dot(N, V), 0.0), 2.0);
+        col = mix(col, uSky, fres * 0.55);
+
+        // 太阳高光 + 滚动噪声闪斑（波光粼粼）
+        vec3 H = normalize(normalize(uSunDir) + V);
+        float spec = pow(max(dot(N, H), 0.0), 90.0);
+        float glint = vnoise(vWorldPos.xz * 3.0 + vec2(uTime * 0.6, -uTime * 0.45));
+        glint = smoothstep(0.5, 0.85, glint);
+        float sparkle = spec * (1.6 + 4.0 * glint);
+        col += vec3(sparkle);
+
+        // 拉伸 FBM 泡沫 streak，随波峰起伏
+        float foam = fbm(vec2(vWorldPos.x * 0.7 + uTime * 0.22, vWorldPos.z * 2.4 - uTime * 0.1));
+        float foamMask = smoothstep(0.6, 0.76, foam) * smoothstep(0.0, 0.1, vH);
+        col = mix(col, vec3(0.94, 1.0, 0.98), foamMask * 0.4);
+
+        float alpha = 0.72 + fres * 0.25;
+        gl_FragColor = vec4(col, alpha);
+      }
+    `
   });
-  const mesh = new THREE.Mesh(geo, mat);
+
+  const mesh = new THREE.Mesh(geo, waterShaderMat);
   mesh.position.y = WATER_TOP;
   mesh.renderOrder = 11;
   scene.add(mesh);
-  return mesh;
-})();
-
-function updateWaterSurface(t) {
-  const pos = waterSurface.geometry.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    pos.setY(i, waveHeight(x, z, t));
-  }
-  pos.needsUpdate = true;
-  waterSurface.geometry.computeVertexNormals();
 }
 
 // ---------- 沙地（带起伏与色斑） ----------
 {
-  const geo = new THREE.PlaneGeometry(TANK_SIZE - 0.15, TANK_SIZE - 0.15, 40, 40);
+  const geo = new THREE.PlaneGeometry(WATER_SIZE - 0.12, WATER_SIZE - 0.12, 40, 40);
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colors = new Float32Array(pos.count * 3);
@@ -526,9 +652,7 @@ const clock = new THREE.Clock();
 function animate() {
   requestAnimationFrame(animate);
   const t = clock.getElapsedTime();
-  timeUniform.value = t;
-
-  updateWaterSurface(t);
+  timeUniform.value = t; // 水面顶点位移、海带摇摆共用此时间
 
   // 渔船随浪起伏 + 侧倾
   const bh = waveHeight(boatPos.x, boatPos.y, t);
