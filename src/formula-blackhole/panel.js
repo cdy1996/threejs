@@ -16,13 +16,14 @@ export function createPanel(params, hooks) {
   f2.add(params.disk, 'tilt', -60, 60, 1).name('倾角°');
   f2.add(params.disk, 'temp', -1, 1, 0.01).name('色温');
 
-  const f3 = gui.addFolder('公式层');
-  f3.add(params.formulas, 'count', 0, 120, 1).name('数量').onFinishChange(hooks.rebuildFormulas);
+  const f3 = gui.addFolder('公式光带');
+  f3.add(params.formulas, 'count', 10, 120, 1).name('公式数量').onFinishChange(hooks.rebuildFormulas);
+  f3.add(params.formulas, 'bands', 1, 8, 1).name('光带数量').onFinishChange(hooks.rebuildFormulas);
   f3.add(params.formulas, 'scale', 0.3, 3, 0.01).name('大小').onChange(hooks.updateFormulaStyle);
   f3.add(params.formulas, 'opacity', 0, 1, 0.01).name('不透明度').onChange(hooks.updateFormulaStyle);
   f3.add(params.formulas, 'hue', 0, 360, 1).name('色相').onChange(hooks.updateFormulaStyle);
   f3.add(params.formulas, 'orbitSpeed', -0.5, 0.5, 0.005).name('公转速度');
-  f3.add(params.formulas, 'dome').name('穹顶层').onChange(hooks.rebuildFormulas);
+  f3.add(params.formulas, 'ribbon', 0, 3, 0.01).name('光带亮度').onChange(hooks.updateFormulaStyle);
 
   const f4 = gui.addFolder('透镜与后期');
   f4.add(params.lens, 'strength', 0, 1.5, 0.01).name('透镜强度');
@@ -31,7 +32,7 @@ export function createPanel(params, hooks) {
   f4.add(params.bloom, 'strength', 0, 3, 0.01).name('Bloom 强度');
   f4.add(params.bloom, 'radius', 0, 1, 0.01).name('Bloom 半径');
   f4.add(params.bloom, 'threshold', 0, 1, 0.01).name('Bloom 阈值');
-  f4.add(params.exposure, 'exposure', 0.2, 2.5, 0.01).name('曝光');
+  f4.add(params, 'exposure', 0.2, 2.5, 0.01).name('曝光');
 
   const f5 = gui.addFolder('相机');
   f5.add(params.camera, 'autoRotate').name('自动环绕');

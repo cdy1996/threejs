@@ -13,8 +13,8 @@ import { createPanel } from './panel.js';
 
 // ---------- 渲染器 / 场景 / 相机 ----------
 const container = document.getElementById('app');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = params.exposure;
@@ -78,6 +78,9 @@ addEventListener('resize', () => {
 
 // ---------- 主循环 ----------
 const clock = new THREE.Clock();
+
+// 调试钩子（控制台可用 __fb 检查场景状态）
+window.__fb = { scene, camera, params, formulaField, diskSystem, renderer, composer };
 
 function animate() {
   requestAnimationFrame(animate);

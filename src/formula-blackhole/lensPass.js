@@ -43,8 +43,9 @@ export function createLensPass() {
 
         vec3 col = texture2D(tDiffuse, vUv + offset).rgb;
 
-        // 视界边缘暖色亮边
-        float edge = exp(-pow((r - uHorizonR * 1.18) / (uHorizonR * 0.25 + 1e-4), 2.0));
+        // 视界边缘暖色亮边（pow 负底数是未定义行为，必须用平方）
+        float edgeD = (r - uHorizonR * 1.18) / (uHorizonR * 0.25 + 1e-4);
+        float edge = exp(-edgeD * edgeD);
         col += vec3(1.0, 0.85, 0.6) * edge * 0.12 * (0.5 + uStrength);
 
         // 视界内压黑
@@ -56,7 +57,6 @@ export function createLensPass() {
     `,
   };
   const pass = new ShaderPass(shader);
-  pass.uniforms = shader.uniforms; // 直接暴露 uniforms 便于外部更新
   return pass;
 }
 

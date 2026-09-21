@@ -36,18 +36,20 @@ void main() {
   // 差速旋转：内快外慢，噪声域用笛卡尔坐标采样避免角度接缝
   float rot = uTime * uSpeed / (0.4 + r * r * 0.35);
   vec2 dirv = vec2(cos(theta + rot), sin(theta + rot));
-  float n = fbm(dirv * r * 1.35 + vec2(r * 2.4 - uTime * 0.1, uTime * 0.03));
-  n = 0.5 + 0.7 * (n - 0.5) + 0.15 * sin(r * 8.0 - uTime * 0.4 + n * 4.0);
+  float n = fbm(dirv * r * 2.2 + vec2(r * 3.2 - uTime * 0.12, uTime * 0.05));
+  // 细环纹 + 条纹对比度
+  n = n + 0.35 * sin(r * 10.0 - uTime * 0.5 + n * 6.0);
+  n = 0.32 + 0.85 * (n - 0.5);
 
   // 内外边缘柔化
-  float fade = smoothstep(0.0, 0.18, t01) * (1.0 - smoothstep(0.45, 1.0, t01));
+  float fade = smoothstep(0.0, 0.14, t01) * (1.0 - smoothstep(0.42, 1.0, t01));
   // 多普勒不对称：一侧更亮
   float doppler = 1.0 + 0.7 * cos(theta - 2.3);
 
   vec3 col = mix(uColorA, uColorB, smoothstep(0.05, 0.85, t01));
-  col = mix(col, vec3(1.0, 0.98, 0.92), pow(1.0 - t01, 3.0) * 0.55);
+  col = mix(col, vec3(1.0, 0.98, 0.92), pow(1.0 - t01, 3.0) * 0.5);
 
-  float i = max(fade * n, 0.0) * doppler * uBrightness;
+  float i = clamp(fade * n, 0.0, 1.4) * doppler * uBrightness * 0.85;
   gl_FragColor = vec4(col, i);
 }
 `;
@@ -70,8 +72,10 @@ varying vec2 vUv;
 uniform float uIntensity;
 void main() {
   float r = length(vUv);
-  float ring = exp(-pow((r - 0.52) * 15.0, 2.0));
-  float glow = exp(-pow((r - 0.5) * 4.5, 2.0)) * 0.32;
+  float d1 = (r - 0.52) * 15.0;
+  float ring = exp(-d1 * d1);
+  float d2 = (r - 0.5) * 4.5;
+  float glow = exp(-d2 * d2) * 0.32;
   vec3 col = mix(vec3(1.0, 0.93, 0.75), vec3(1.0, 0.62, 0.2), glow * 2.4);
   float a = (ring + glow) * uIntensity * smoothstep(1.0, 0.82, r);
   gl_FragColor = vec4(col * a, a);
