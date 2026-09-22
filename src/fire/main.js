@@ -38,7 +38,12 @@ const params = {
   lightBrightness: 1.0,   // 内部灯光亮度
   warmRatio: 0.25,        // 暖光比例
   showFurniture: true,    // 显示工位
-  furnitureOpacity: 0.6   // 工位透明度
+  furnitureOpacity: 0.6,  // 工位透明度
+  fogDensity: 1.0,        // 体积雾密度
+  fogColor: '#1a5a9a',    // 雾颜色
+  showInnerCore: true,    // 暗内核开关
+  innerEdge: 0.04,        // 暗内核擦边透明度
+  innerCutoff: 0.5        // 暗内核硬遮挡阈值（越低暗区越大）
 };
 
 /* ================= 渲染器 ================= */
@@ -174,7 +179,8 @@ building.add(tower);
 const innerUniforms = {
   uColor: { value: new THREE.Color(0x02091a) },
   uInner: { value: params.innerDarkness },              // 中心不透明度
-  uEdge: { value: 0.04 }                                // 擦边透明度
+  uEdge: { value: params.innerEdge },                   // 擦边透明度
+  uCutoff: { value: params.innerCutoff }                // 硬遮挡阈值
 };
 const innerMat = new THREE.ShaderMaterial({
   uniforms: innerUniforms,
@@ -193,6 +199,7 @@ const innerMat = new THREE.ShaderMaterial({
     uniform vec3 uColor;
     uniform float uInner;
     uniform float uEdge;
+    uniform float uCutoff;
     void main() {
       vec3 viewDir = normalize(cameraPosition - vWorldPos);
       // 视线与表面越正交，穿透楼体越深 → 越不透明
@@ -200,13 +207,16 @@ const innerMat = new THREE.ShaderMaterial({
       float a = mix(uEdge, uInner, pow(ndv, 1.2));
       // 中心区域写入深度形成硬遮挡（挡住后排工位）；
       // 边缘区域 discard，不写深度保持通透
-      if (a < 0.5) discard;
+      if (a < uCutoff) discard;
       gl_FragColor = vec4(uColor, max(a, 0.85));
     }`,
   transparent: true,
   depthWrite: true,
   side: THREE.DoubleSide
 });
+const innerCore = new THREE.Group();
+innerCore.visible = params.showInnerCore;
+building.add(innerCore);
 {
   const alarmLo = floorBase(ALARM_FLOOR), alarmHi = alarmLo + FH;
   const segments = [
@@ -220,7 +230,7 @@ const innerMat = new THREE.ShaderMaterial({
     const inner = new THREE.Mesh(new THREE.BoxGeometry(W - 4.0, h, D - 4.0), innerMat);
     inner.position.y = (y0 + y1) / 2;
     inner.renderOrder = 1; // 先画内核（写深度），再画工位/灯光/幕墙
-    building.add(inner);
+    innerCore.add(inner);
     const innerEdges = new THREE.LineSegments(
       new THREE.EdgesGeometry(inner.geometry),
       new THREE.LineBasicMaterial({ color: 0x144a7a, transparent: true, opacity: 0.22 })
@@ -616,6 +626,119 @@ const scanBand = new THREE.Mesh(
 scanBand.position.y = PODIUM_H;
 building.add(scanBand);
 
+/* ================= 楼内体积雾（Volumetric Fog） ================= */
+// 原理：沿相机视线在楼体盒子内 raymarching，逐步累加雾密度，
+// 透射率按 Beer-Lambert 定律 exp(-σ·d) 指数衰减 —— 这就是"光进入楼内衰减"
+// 的物理正确模拟，暗内核只是它的廉价近似。
+const fogUniforms = {
+  uTime: { value: 0 },
+  uDensity: { value: params.fogDensity },          // 消光系数 σ
+  uColor: { value: new THREE.Color(params.fogColor) },
+  uBoxMin: { value: new THREE.Vector3(-W / 2 + 0.3, PODIUM_H + 0.1, -D / 2 + 0.3) },
+  uBoxMax: { value: new THREE.Vector3(W / 2 - 0.3, PODIUM_H + FLOORS * FH - 0.1, D / 2 - 0.3) }
+};
+const fogMat = new THREE.ShaderMaterial({
+  uniforms: fogUniforms,
+  vertexShader: /* glsl */`
+    varying vec3 vWorldPos;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: /* glsl */`
+    varying vec3 vWorldPos;
+    uniform float uTime;
+    uniform float uDensity;
+    uniform vec3 uColor;
+    uniform vec3 uBoxMin;
+    uniform vec3 uBoxMax;
+
+    // 廉价 value noise
+    float hash(vec3 p) {
+      p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+      p *= 17.0;
+      return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+    }
+    float noise(vec3 p) {
+      vec3 i = floor(p), f = fract(p);
+      f = f * f * (3.0 - 2.0 * f);
+      return mix(
+        mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+            mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+        mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+            mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
+        f.z);
+    }
+    float fbm(vec3 p) {
+      return noise(p) * 0.65 + noise(p * 2.3) * 0.35;
+    }
+
+    // 射线与 AABB 求交（slab 法）
+    vec2 rayBox(vec3 ro, vec3 rd) {
+      vec3 inv = 1.0 / rd;
+      vec3 t0 = (uBoxMin - ro) * inv;
+      vec3 t1 = (uBoxMax - ro) * inv;
+      vec3 tmin = min(t0, t1), tmax = max(t0, t1);
+      return vec2(max(max(tmin.x, tmin.y), tmin.z),
+                  min(min(tmax.x, tmax.y), tmax.z));
+    }
+
+    void main() {
+      vec3 ro = cameraPosition;
+      vec3 rd = normalize(vWorldPos - ro);
+      vec2 t = rayBox(ro, rd);
+      float t0 = max(t.x, 0.0), t1 = t.y;
+      if (t1 <= t0) discard;
+
+      const int STEPS = 26;
+      float dt = (t1 - t0) / float(STEPS);
+      float T = 1.0;            // 透射率
+      vec3 scatter = vec3(0.0); // 雾散射进来的光
+
+      for (int i = 0; i < STEPS; i++) {
+        vec3 p = ro + rd * (t0 + (float(i) + 0.5) * dt);
+
+        // 噪声雾密度：缓慢流动
+        float n = fbm(p * 0.22 + vec3(0.0, -uTime * 0.05, uTime * 0.02));
+        // 竖直光柱（光被拉成竖向条纹 → 光线感）
+        float shaft = noise(vec3(p.x * 0.55, uTime * 0.10, p.z * 0.55));
+        shaft = smoothstep(0.62, 0.95, shaft);
+        // 漂浮微尘亮点
+        float dust = smoothstep(0.93, 1.0, noise(p * 1.6 + uTime * 0.15)) * 1.5;
+        // 底部略浓、顶部略稀
+        float hFall = 1.0 - smoothstep(5.0, 60.0, p.y) * 0.4;
+
+        float density = (0.35 + n * 0.9 + shaft * 1.2 + dust) * hFall * uDensity;
+
+        // Beer-Lambert：这一段吸收掉的透射率
+        float a = 1.0 - exp(-density * dt * 0.55);
+        // 雾本身被光照亮（蓝光 + 光柱更亮）
+        vec3 light = uColor * (0.5 + shaft * 1.6 + dust * 0.8);
+        scatter += T * light * a;
+        T *= 1.0 - a;
+        if (T < 0.02) break; // 提前退出：后面已经看不见
+      }
+
+      float alpha = 1.0 - T;
+      if (alpha < 0.01) discard;
+      gl_FragColor = vec4(scatter, alpha);
+    }`,
+  transparent: true,
+  depthWrite: false,
+  side: THREE.BackSide, // 画盒子的远面 = 视线的出口点
+});
+{
+  const fogBox = new THREE.Mesh(
+    new THREE.BoxGeometry(W - 0.4, FLOORS * FH, D - 0.4),
+    fogMat
+  );
+  fogBox.position.y = PODIUM_H + (FLOORS * FH) / 2;
+  fogBox.renderOrder = 4; // 内核(1) → 工位(2) → 灯光(3) → 雾(4) → 幕墙(5)
+  building.add(fogBox);
+}
+tower.renderOrder = 5;
+
 /* ================= 线框统一调控 ================= */
 // 收集所有青色线框材质（大楼轮廓/楼层线/信标等，不含红色报警）
 const edgeMats = [];
@@ -648,8 +771,14 @@ fresnelMat.uniforms.uBase.value = params.facadeBrightness;
   gui.addColor(params, 'edgeColor').name('线框颜色').onChange(applyEdges);
   gui.add(params, 'facadeBrightness', 0.02, 0.30, 0.005).name('楼面亮度')
     .onChange(v => { fresnelMat.uniforms.uBase.value = v; });
+  gui.add(params, 'showInnerCore').name('暗内核开关')
+    .onChange(v => { innerCore.visible = v; });
   gui.add(params, 'innerDarkness', 0.05, 0.98, 0.01).name('内部暗度(越小越透明)')
     .onChange(v => { innerUniforms.uInner.value = v; });
+  gui.add(params, 'innerEdge', 0, 0.5, 0.01).name('暗内核擦边透明度')
+    .onChange(v => { innerUniforms.uEdge.value = v; });
+  gui.add(params, 'innerCutoff', 0.1, 0.9, 0.01).name('暗内核遮挡阈值')
+    .onChange(v => { innerUniforms.uCutoff.value = v; });
   gui.add(params, 'lightCount', 0, 300, 1).name('灯光数量').onChange(buildInteriorLights);
   gui.add(params, 'lightBrightness', 0, 3, 0.05).name('灯光亮度')
     .onChange(v => { interiorLights.material.uniforms.uBrightness.value = v; });
@@ -657,6 +786,10 @@ fresnelMat.uniforms.uBase.value = params.facadeBrightness;
   gui.add(params, 'showFurniture').name('显示工位').onChange(v => { furniture.visible = v; });
   gui.add(params, 'furnitureOpacity', 0.1, 1, 0.02).name('工位透明度')
     .onChange(v => { for (const mt of furniture.userData.mats) mt.opacity = v; });
+  gui.add(params, 'fogDensity', 0, 3, 0.02).name('雾密度')
+    .onChange(v => { fogUniforms.uDensity.value = v; });
+  gui.addColor(params, 'fogColor').name('雾颜色')
+    .onChange(v => { fogUniforms.uColor.value.set(v); });
 }
 
 /* ================= 选择性泛光（只让发光体过 Bloom） ================= */
@@ -769,6 +902,8 @@ function animate() {
   scanBand.position.y = PODIUM_H + ((t * 4) % (FLOORS * FH));
   // 楼内灯光呼吸
   interiorLights.material.uniforms.uTime.value = t;
+  // 体积雾流动
+  fogUniforms.uTime.value = t;
   // 顶部信标旋转呼吸
   beacon.rotation.y = t * 0.8;
   beacon.material.opacity = 0.5 + 0.3 * Math.sin(t * 2);
