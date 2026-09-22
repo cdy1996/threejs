@@ -158,6 +158,7 @@ const fresnelMat = new THREE.ShaderMaterial({
   depthWrite: false
 });
 const tower = new THREE.Mesh(towerGeo, fresnelMat);
+tower.renderOrder = 4; // 幕墙最后渲染，叠加在所有内部结构之上
 const towerEdges = new THREE.LineSegments(
   new THREE.EdgesGeometry(towerGeo),
   new THREE.LineBasicMaterial({ color: COL.edge, transparent: true, opacity: 0.55 })
@@ -168,10 +169,43 @@ building.add(tower);
 
 // 暗内核：挡住穿透视线，让楼体有"暗部"实体感
 // 分上下两段，火警层(16F)留空，避免遮挡火焰/火花
-// 注意：不能开 depthWrite，否则透明物体也会写深度，
-// 把背后的幕墙和楼内灯光全部挡死，opacity 调多低都不透明
-const innerMat = new THREE.MeshBasicMaterial({
-  color: 0x02091a, transparent: true, opacity: params.innerDarkness, depthWrite: false
+// 透明度按视线穿透深度渐变：正视楼面中心穿透最深(最暗)，擦边掠过最浅(最透)
+// 注意：不能开 depthWrite，否则透明物体也会写深度，把背后幕墙和楼内灯光挡死
+const innerUniforms = {
+  uColor: { value: new THREE.Color(0x02091a) },
+  uInner: { value: params.innerDarkness },              // 中心不透明度
+  uEdge: { value: 0.04 }                                // 擦边透明度
+};
+const innerMat = new THREE.ShaderMaterial({
+  uniforms: innerUniforms,
+  vertexShader: /* glsl */`
+    varying vec3 vNormalW;
+    varying vec3 vWorldPos;
+    void main() {
+      vNormalW = normalize(mat3(modelMatrix) * normal);
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorldPos = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: /* glsl */`
+    varying vec3 vNormalW;
+    varying vec3 vWorldPos;
+    uniform vec3 uColor;
+    uniform float uInner;
+    uniform float uEdge;
+    void main() {
+      vec3 viewDir = normalize(cameraPosition - vWorldPos);
+      // 视线与表面越正交，穿透楼体越深 → 越不透明
+      float ndv = abs(dot(normalize(vNormalW), viewDir));
+      float a = mix(uEdge, uInner, pow(ndv, 1.2));
+      // 中心区域写入深度形成硬遮挡（挡住后排工位）；
+      // 边缘区域 discard，不写深度保持通透
+      if (a < 0.5) discard;
+      gl_FragColor = vec4(uColor, max(a, 0.85));
+    }`,
+  transparent: true,
+  depthWrite: true,
+  side: THREE.DoubleSide
 });
 {
   const alarmLo = floorBase(ALARM_FLOOR), alarmHi = alarmLo + FH;
@@ -181,9 +215,11 @@ const innerMat = new THREE.MeshBasicMaterial({
   ];
   for (const [y0, y1] of segments) {
     const h = y1 - y0 - 0.15;
-    const inner = new THREE.Mesh(new THREE.BoxGeometry(W - 1.0, h, D - 1.0), innerMat);
+    // 内核比幕墙小两圈：边缘工位(距中心4.4)落在内核与幕墙之间，
+    // 从正面看得到前排工位，但后排工位被内核中心不透区挡死
+    const inner = new THREE.Mesh(new THREE.BoxGeometry(W - 4.0, h, D - 4.0), innerMat);
     inner.position.y = (y0 + y1) / 2;
-    inner.renderOrder = -1; // 先画内核，幕墙后画叠加其上
+    inner.renderOrder = 1; // 先画内核（写深度），再画工位/灯光/幕墙
     building.add(inner);
     const innerEdges = new THREE.LineSegments(
       new THREE.EdgesGeometry(inner.geometry),
@@ -191,6 +227,20 @@ const innerMat = new THREE.MeshBasicMaterial({
     );
     inner.add(innerEdges);
   }
+
+  // 核心筒（电梯井/楼梯间）：中心方柱体 + 线框
+  const coreGeo = new THREE.BoxGeometry(3.6, FLOORS * FH, 3.6);
+  const core = new THREE.Mesh(
+    coreGeo,
+    new THREE.MeshBasicMaterial({ color: 0x0c2a52, transparent: true, opacity: 0.5, depthWrite: false })
+  );
+  core.position.y = PODIUM_H + (FLOORS * FH) / 2;
+  building.add(core);
+  const coreEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(coreGeo),
+    new THREE.LineBasicMaterial({ color: COL.edge, transparent: true, opacity: 0.3 })
+  );
+  core.add(coreEdges);
 
   // 楼板剪影：内核表面的横向暗纹，隔着玻璃若隐若现
   const slabGeo = new THREE.BoxGeometry(W - 0.9, 0.1, D - 0.9);
@@ -278,6 +328,7 @@ function buildInteriorLights() {
   interiorLights = new THREE.Points(geo, mat);
   interiorLights.name = 'glow-windows';
   interiorLights.layers.enable(1); // BLOOM_LAYER
+  interiorLights.renderOrder = 3; // 内核(1) → 工位(2) → 灯光(3)
   building.add(interiorLights);
 }
 buildInteriorLights();
@@ -285,9 +336,10 @@ buildInteriorLights();
 // 楼层工位：每层排列办公桌椅（桌=长方体，椅=圆柱），隔着玻璃增加真实感
 const furniture = new THREE.Group();
 {
-  const ROWS_Z = [-3.0, 0, 3.0];        // 三排
-  const COLS_X = [-4.0, -1.4, 1.4, 4.0]; // 每排四个工位
-  const PER_FLOOR = ROWS_Z.length * COLS_X.length;
+  // 沿楼层边缘一圈排布：四个立面各 5 个工位，面朝幕墙
+  const EDGE_OFF = W / 2 - 1.6;         // 距幕墙的距离
+  const SPACING = [-4.4, -2.2, 0, 2.2, 4.4];
+  const PER_FLOOR = SPACING.length * 4;
   const TOTAL = PER_FLOOR * FLOORS;
 
   const deskMat = new THREE.MeshBasicMaterial({
@@ -302,17 +354,31 @@ const furniture = new THREE.Group();
   const chairs = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.24, 0.42, 10), chairMat, TOTAL);
 
   const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const one = new THREE.Vector3(1, 1, 1);
+  const pos = new THREE.Vector3();
   let idx = 0;
+  // 四个边：rotY 为桌子朝向（长边平行于幕墙），inward 为椅子偏向楼内的方向
+  const sides = [
+    { rotY: 0,              dx: 1, dz: 0,  off: [0, EDGE_OFF],  inward: [0, -1] }, // 北（+Z）
+    { rotY: 0,              dx: 1, dz: 0,  off: [0, -EDGE_OFF], inward: [0, 1] },  // 南（-Z）
+    { rotY: Math.PI / 2,    dx: 0, dz: 1,  off: [EDGE_OFF, 0],  inward: [-1, 0] }, // 东（+X）
+    { rotY: Math.PI / 2,    dx: 0, dz: 1,  off: [-EDGE_OFF, 0], inward: [1, 0] }   // 西（-X）
+  ];
   for (let f = 1; f <= FLOORS; f++) {
     const baseY = floorBase(f);
-    for (const z of ROWS_Z) {
-      for (const x of COLS_X) {
-        // 桌面中心（桌高 0.5）
-        m.makeTranslation(x, baseY + 0.25, z);
+    for (const s of sides) {
+      q.setFromAxisAngle(up, s.rotY);
+      for (const t of SPACING) {
+        const x = s.off[0] + s.dx * t;
+        const z = s.off[1] + s.dz * t;
+        pos.set(x, baseY + 0.25, z);
+        m.compose(pos, q, one);
         desks.setMatrixAt(idx, m);
-        // 椅子放在桌子朝向走道的一侧
-        const side = z <= 0 ? 1 : -1;
-        m.makeTranslation(x, baseY + 0.21, z + side * 0.68);
+        // 椅子在桌子靠楼内一侧
+        pos.set(x + s.inward[0] * 0.68, baseY + 0.21, z + s.inward[1] * 0.68);
+        m.compose(pos, q, one);
         chairs.setMatrixAt(idx, m);
         idx++;
       }
@@ -320,6 +386,10 @@ const furniture = new THREE.Group();
   }
   desks.instanceMatrix.needsUpdate = true;
   chairs.instanceMatrix.needsUpdate = true;
+  // 渲染顺序：内核(1, 写深度) → 工位(2) → 楼内灯光(3) → 幕墙(4)
+  // 前排工位在内核之前（更靠近相机）能通过深度测试，后排被内核挡掉
+  desks.renderOrder = 2;
+  chairs.renderOrder = 2;
   furniture.add(desks, chairs);
 }
 building.add(furniture);
@@ -579,7 +649,7 @@ fresnelMat.uniforms.uBase.value = params.facadeBrightness;
   gui.add(params, 'facadeBrightness', 0.02, 0.30, 0.005).name('楼面亮度')
     .onChange(v => { fresnelMat.uniforms.uBase.value = v; });
   gui.add(params, 'innerDarkness', 0.05, 0.98, 0.01).name('内部暗度(越小越透明)')
-    .onChange(v => { innerMat.opacity = v; });
+    .onChange(v => { innerUniforms.uInner.value = v; });
   gui.add(params, 'lightCount', 0, 300, 1).name('灯光数量').onChange(buildInteriorLights);
   gui.add(params, 'lightBrightness', 0, 3, 0.05).name('灯光亮度')
     .onChange(v => { interiorLights.material.uniforms.uBrightness.value = v; });
