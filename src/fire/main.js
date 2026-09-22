@@ -7,6 +7,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 
 /* ================= 常量 ================= */
 const FLOORS = 28;          // 层数
@@ -25,6 +26,19 @@ const COL = {
   win: 0x7fd8ff,
   alarm: 0xff2a3c,
   ground: 0x04102a
+};
+
+/* ================= 可调参数（控制面板） ================= */
+const params = {
+  edgeBrightness: 0.55,   // 线框亮度（压暗）
+  edgeColor: '#35c8ff',   // 线框颜色
+  facadeBrightness: 0.07, // 楼面亮度（压暗）
+  innerDarkness: 0.88,    // 内部暗度
+  lightCount: 50,         // 内部灯光数量
+  lightBrightness: 1.0,   // 内部灯光亮度
+  warmRatio: 0.25,        // 暖光比例
+  showFurniture: true,    // 显示工位
+  furnitureOpacity: 0.6   // 工位透明度
 };
 
 /* ================= 渲染器 ================= */
@@ -152,34 +166,45 @@ tower.add(towerEdges);
 tower.position.y = PODIUM_H + (FLOORS * FH) / 2;
 building.add(tower);
 
-// 内部结构：实例化楼板 + 核心筒（让玻璃后"有东西可看"）
+// 暗内核：挡住穿透视线，让楼体有"暗部"实体感
+// 分上下两段，火警层(16F)留空，避免遮挡火焰/火花
+// 注意：不能开 depthWrite，否则透明物体也会写深度，
+// 把背后的幕墙和楼内灯光全部挡死，opacity 调多低都不透明
+const innerMat = new THREE.MeshBasicMaterial({
+  color: 0x02091a, transparent: true, opacity: params.innerDarkness, depthWrite: false
+});
 {
-  const slabGeo = new THREE.BoxGeometry(W - 0.8, 0.14, D - 0.8);
+  const alarmLo = floorBase(ALARM_FLOOR), alarmHi = alarmLo + FH;
+  const segments = [
+    [PODIUM_H, alarmLo],              // 火警层以下
+    [alarmHi, PODIUM_H + FLOORS * FH] // 火警层以上
+  ];
+  for (const [y0, y1] of segments) {
+    const h = y1 - y0 - 0.15;
+    const inner = new THREE.Mesh(new THREE.BoxGeometry(W - 1.0, h, D - 1.0), innerMat);
+    inner.position.y = (y0 + y1) / 2;
+    inner.renderOrder = -1; // 先画内核，幕墙后画叠加其上
+    building.add(inner);
+    const innerEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(inner.geometry),
+      new THREE.LineBasicMaterial({ color: 0x144a7a, transparent: true, opacity: 0.22 })
+    );
+    inner.add(innerEdges);
+  }
+
+  // 楼板剪影：内核表面的横向暗纹，隔着玻璃若隐若现
+  const slabGeo = new THREE.BoxGeometry(W - 0.9, 0.1, D - 0.9);
   const slabMat = new THREE.MeshBasicMaterial({
-    color: 0x11386b, transparent: true, opacity: 0.5, depthWrite: false
+    color: 0x0a2246, transparent: true, opacity: 0.35, depthWrite: false
   });
   const slabs = new THREE.InstancedMesh(slabGeo, slabMat, FLOORS);
   const m = new THREE.Matrix4();
   for (let i = 0; i < FLOORS; i++) {
-    m.makeTranslation(0, floorBase(i + 1) + 0.07, 0);
+    m.makeTranslation(0, floorBase(i + 1) + 0.05, 0);
     slabs.setMatrixAt(i, m);
   }
   slabs.instanceMatrix.needsUpdate = true;
   building.add(slabs);
-
-  // 核心筒（电梯井/楼梯间剪影）
-  const core = new THREE.Mesh(
-    new THREE.BoxGeometry(3.6, FLOORS * FH, 3.6),
-    new THREE.MeshBasicMaterial({ color: 0x0c2a52, transparent: true, opacity: 0.45, depthWrite: false })
-  );
-  core.position.y = PODIUM_H + (FLOORS * FH) / 2;
-  building.add(core);
-  // 核心筒微光轮廓
-  const coreEdges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(core.geometry),
-    new THREE.LineBasicMaterial({ color: 0x1f7fb8, transparent: true, opacity: 0.28 })
-  );
-  core.add(coreEdges);
 }
 
 // 楼层分隔线
@@ -188,34 +213,116 @@ for (let i = 0; i <= FLOORS; i++) {
   building.add(rectOutline(W + 0.06, D + 0.06, y, COL.edge, i === 0 ? 0.7 : 0.30));
 }
 
-// 立面窗点
+// 楼内灯光：随机分布在塔楼内部的光点（隔着玻璃看到的室内灯）
+let interiorLights = null;
+function buildInteriorLights() {
+  if (interiorLights) {
+    building.remove(interiorLights);
+    interiorLights.geometry.dispose();
+    interiorLights.material.dispose();
+  }
+  const n = Math.round(params.lightCount);
+  const positions = new Float32Array(n * 3);
+  const colors = new Float32Array(n * 3);
+  const phases = new Float32Array(n);
+  const speeds = new Float32Array(n);
+  const cCool = new THREE.Color(0x9fdcff);
+  const cWarm = new THREE.Color(0xffd9a0);
+  for (let i = 0; i < n; i++) {
+    // 随机分布在塔身内部体积中（留出幕墙厚度）
+    positions[i * 3] = (Math.random() - 0.5) * (W - 2.4);
+    positions[i * 3 + 1] = PODIUM_H + 0.6 + Math.random() * (FLOORS * FH - 1.2);
+    positions[i * 3 + 2] = (Math.random() - 0.5) * (D - 2.4);
+    const col = (Math.random() < params.warmRatio ? cWarm : cCool).clone()
+      .multiplyScalar(0.5 + Math.random() * 0.5);
+    colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
+    phases[i] = Math.random() * Math.PI * 2;
+    speeds[i] = 0.2 + Math.random() * 0.6; // 缓慢呼吸
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+  geo.setAttribute('aSpeed', new THREE.BufferAttribute(speeds, 1));
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+      uBrightness: { value: params.lightBrightness }
+    },
+    vertexShader: /* glsl */`
+      attribute vec3 aColor;
+      attribute float aPhase;
+      attribute float aSpeed;
+      varying vec3 vColor;
+      uniform float uTime;
+      uniform float uBrightness;
+      void main() {
+        float breathe = 0.78 + 0.22 * sin(uTime * aSpeed + aPhase);
+        vColor = aColor * breathe * uBrightness;
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = 3.0 * (120.0 / -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying vec3 vColor;
+      void main() {
+        // 圆形光点，柔和光晕
+        float d = length(gl_PointCoord - 0.5);
+        float a = smoothstep(0.5, 0.12, d);
+        gl_FragColor = vec4(vColor, a);
+      }`,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  interiorLights = new THREE.Points(geo, mat);
+  interiorLights.name = 'glow-windows';
+  interiorLights.layers.enable(1); // BLOOM_LAYER
+  building.add(interiorLights);
+}
+buildInteriorLights();
+
+// 楼层工位：每层排列办公桌椅（桌=长方体，椅=圆柱），隔着玻璃增加真实感
+const furniture = new THREE.Group();
 {
-  const positions = [];
-  const cols = 13, rows = FLOORS * 2; // 每层两排窗
-  for (let f = 0; f < 4; f++) {
-    for (let c = 0; c < cols; c++) {
-      for (let r = 0; r < rows; r++) {
-        if (Math.random() < 0.32) continue; // 随机镂空
-        const u = -W / 2 + (c + 0.5) * (W / cols);
-        const y = PODIUM_H + (r + 0.5) * (FLOORS * FH / rows);
-        let x, z;
-        if (f === 0) { x = u; z = D / 2 + 0.02; }
-        else if (f === 1) { x = u; z = -D / 2 - 0.02; }
-        else if (f === 2) { x = W / 2 + 0.02; z = u; }
-        else { x = -W / 2 - 0.02; z = u; }
-        positions.push(x, y, z);
+  const ROWS_Z = [-3.0, 0, 3.0];        // 三排
+  const COLS_X = [-4.0, -1.4, 1.4, 4.0]; // 每排四个工位
+  const PER_FLOOR = ROWS_Z.length * COLS_X.length;
+  const TOTAL = PER_FLOOR * FLOORS;
+
+  const deskMat = new THREE.MeshBasicMaterial({
+    color: 0x1a3f6e, transparent: true, opacity: params.furnitureOpacity, depthWrite: false
+  });
+  const chairMat = new THREE.MeshBasicMaterial({
+    color: 0x14304f, transparent: true, opacity: params.furnitureOpacity, depthWrite: false
+  });
+  furniture.userData.mats = [deskMat, chairMat];
+
+  const desks = new THREE.InstancedMesh(new THREE.BoxGeometry(1.15, 0.5, 0.6), deskMat, TOTAL);
+  const chairs = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.2, 0.24, 0.42, 10), chairMat, TOTAL);
+
+  const m = new THREE.Matrix4();
+  let idx = 0;
+  for (let f = 1; f <= FLOORS; f++) {
+    const baseY = floorBase(f);
+    for (const z of ROWS_Z) {
+      for (const x of COLS_X) {
+        // 桌面中心（桌高 0.5）
+        m.makeTranslation(x, baseY + 0.25, z);
+        desks.setMatrixAt(idx, m);
+        // 椅子放在桌子朝向走道的一侧
+        const side = z <= 0 ? 1 : -1;
+        m.makeTranslation(x, baseY + 0.21, z + side * 0.68);
+        chairs.setMatrixAt(idx, m);
+        idx++;
       }
     }
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  const wins = new THREE.Points(geo, new THREE.PointsMaterial({
-    color: COL.win, size: 0.16, transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false
-  }));
-  wins.name = 'glow-windows';
-  building.add(wins);
+  desks.instanceMatrix.needsUpdate = true;
+  chairs.instanceMatrix.needsUpdate = true;
+  furniture.add(desks, chairs);
 }
+building.add(furniture);
 
 // 顶部设备层（皇冠）
 const crown1 = glassBox(8, 4, 8, 0.14); crown1.position.y = TOWER_TOP + 2; building.add(crown1);
@@ -439,6 +546,49 @@ const scanBand = new THREE.Mesh(
 scanBand.position.y = PODIUM_H;
 building.add(scanBand);
 
+/* ================= 线框统一调控 ================= */
+// 收集所有青色线框材质（大楼轮廓/楼层线/信标等，不含红色报警）
+const edgeMats = [];
+{
+  const seen = new Set();
+  const collect = root => root.traverse(o => {
+    if ((o.isLine || o.isLineSegments || o.isLineLoop) &&
+        o.material.color && o.material.color.getHex() === COL.edge && !seen.has(o.material)) {
+      seen.add(o.material);
+      edgeMats.push({ mat: o.material, base: o.material.opacity ?? 1 });
+    }
+  });
+  collect(building);
+  collect(scene);
+}
+function applyEdges() {
+  const c = new THREE.Color(params.edgeColor);
+  for (const e of edgeMats) {
+    e.mat.color.copy(c);
+    e.mat.opacity = e.base * params.edgeBrightness;
+  }
+}
+applyEdges();
+fresnelMat.uniforms.uBase.value = params.facadeBrightness;
+
+/* ================= 控制面板 ================= */
+{
+  const gui = new GUI({ title: '大楼外观控制' });
+  gui.add(params, 'edgeBrightness', 0, 1.2, 0.01).name('线框亮度').onChange(applyEdges);
+  gui.addColor(params, 'edgeColor').name('线框颜色').onChange(applyEdges);
+  gui.add(params, 'facadeBrightness', 0.02, 0.30, 0.005).name('楼面亮度')
+    .onChange(v => { fresnelMat.uniforms.uBase.value = v; });
+  gui.add(params, 'innerDarkness', 0.05, 0.98, 0.01).name('内部暗度(越小越透明)')
+    .onChange(v => { innerMat.opacity = v; });
+  gui.add(params, 'lightCount', 0, 300, 1).name('灯光数量').onChange(buildInteriorLights);
+  gui.add(params, 'lightBrightness', 0, 3, 0.05).name('灯光亮度')
+    .onChange(v => { interiorLights.material.uniforms.uBrightness.value = v; });
+  gui.add(params, 'warmRatio', 0, 1, 0.01).name('暖光比例').onChange(buildInteriorLights);
+  gui.add(params, 'showFurniture').name('显示工位').onChange(v => { furniture.visible = v; });
+  gui.add(params, 'furnitureOpacity', 0.1, 1, 0.02).name('工位透明度')
+    .onChange(v => { for (const mt of furniture.userData.mats) mt.opacity = v; });
+}
+
 /* ================= 选择性泛光（只让发光体过 Bloom） ================= */
 const BLOOM_LAYER = 1;
 const bloomLayer = new THREE.Layers();
@@ -547,6 +697,8 @@ function animate() {
   }
   // 塔身扫描带
   scanBand.position.y = PODIUM_H + ((t * 4) % (FLOORS * FH));
+  // 楼内灯光呼吸
+  interiorLights.material.uniforms.uTime.value = t;
   // 顶部信标旋转呼吸
   beacon.rotation.y = t * 0.8;
   beacon.material.opacity = 0.5 + 0.3 * Math.sin(t * 2);

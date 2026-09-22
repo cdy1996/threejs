@@ -237,6 +237,25 @@
 
   .scroll-thin::-webkit-scrollbar { width: 4px; }
   .scroll-thin::-webkit-scrollbar-thumb { background: var(--cyan-dim); }
+
+  /* ===== 控制面板（lil-gui）主题 ===== */
+  .lil-gui {
+    --background-color: rgba(8, 24, 52, .92);
+    --title-background-color: rgba(10, 36, 76, .95);
+    --widget-color: rgba(46, 201, 255, .14);
+    --hover-color: rgba(46, 201, 255, .24);
+    --focus-color: rgba(46, 201, 255, .34);
+    --number-color: #2ec9ff;
+    --string-color: #37e2a0;
+    --text-color: #d7ecff;
+    --font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    z-index: 10;
+  }
+  .lil-gui.root {
+    position: fixed; top: 88px; right: 424px;
+    border: 1px solid rgba(46, 201, 255, .25);
+  }
+  .lil-gui.root > .title { letter-spacing: 2px; }
 </style>
 </head>
 <body>
