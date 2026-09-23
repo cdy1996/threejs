@@ -51,6 +51,8 @@ export function createBottle() {
   paper.rotation.z = 0.12;
   group.add(paper);
 
+  group.scale.setScalar(10); // 放大便于观察（面板可调）
+
   const state = {
     group,
     glassMat,

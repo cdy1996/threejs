@@ -2,14 +2,19 @@
 // 顶点着色器与 JS 采样共用同一份波定义，保证瓶子浮沉与波形严格同步。
 import * as THREE from 'three';
 
-// 每个波: 方向(未归一化)、陡峭度 steep(0~1)、波长(米)
+// 每个波: 方向(未归一化)、陡峭度 steep(0~1)、波长(米)、初始相位
+// 宽频谱 + 分散方向 + 随机相位，避免规则平行的波峰列
 export const WAVES = [
-  { dir: [1.0, 0.25],  steep: 0.240, len: 64.0 },
-  { dir: [0.85, -0.6], steep: 0.215, len: 33.0 },
-  { dir: [-0.35, 0.9], steep: 0.185, len: 19.0 },
-  { dir: [0.2, 1.0],   steep: 0.165, len: 11.5 },
-  { dir: [-0.9, -0.3], steep: 0.140, len: 7.0 },
-  { dir: [0.55, -0.8], steep: 0.115, len: 4.6 },
+  { dir: [1.0, 0.15],   steep: 0.200, len: 64.0, phase: 0.0 },
+  { dir: [0.72, -0.69], steep: 0.180, len: 41.0, phase: 1.7 },
+  { dir: [-0.42, 0.91], steep: 0.160, len: 27.0, phase: 3.9 },
+  { dir: [0.31, 0.95],  steep: 0.150, len: 17.0, phase: 2.4 },
+  { dir: [-0.88, -0.47],steep: 0.130, len: 11.0, phase: 5.1 },
+  { dir: [0.59, -0.81], steep: 0.120, len: 7.3,  phase: 0.9 },
+  { dir: [-0.17, -0.99],steep: 0.105, len: 4.9,  phase: 4.2 },
+  { dir: [0.97, 0.24],  steep: 0.090, len: 3.3,  phase: 2.8 },
+  { dir: [-0.62, 0.78], steep: 0.080, len: 2.2,  phase: 5.8 },
+  { dir: [0.14, -0.99], steep: 0.070, len: 1.5,  phase: 1.2 },
 ];
 
 // 生成注入到顶点着色器的波叠加代码（波参数烘焙为常量，全局缩放走 uniform）
@@ -18,7 +23,7 @@ export function waveCallsGLSL() {
     const l = Math.hypot(w.dir[0], w.dir[1]);
     const dx = (w.dir[0] / l).toFixed(5);
     const dz = (w.dir[1] / l).toFixed(5);
-    return `  disp += gerstner(vec2(${dx}, ${dz}), ${w.steep.toFixed(4)}, ${w.len.toFixed(2)}, p, uTime, tang, binorm);`;
+    return `  disp += gerstner(vec2(${dx}, ${dz}), ${w.steep.toFixed(4)}, ${w.len.toFixed(2)}, ${w.phase.toFixed(2)}, p, uTime, tang, binorm);`;
   }).join('\n');
 }
 
@@ -36,7 +41,7 @@ export function sampleHeight(x, z, t, p) {
     const k = (2 * Math.PI) / w.len;
     const c = Math.sqrt(9.81 / k) * p.speed;
     const a = (w.steep * p.amplitude) / k;
-    const f = k * (rx * x + rz * z - c * t);
+    const f = k * (rx * x + rz * z - c * t) + w.phase;
     y += a * Math.sin(f);
   }
   return y;

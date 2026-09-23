@@ -16,7 +16,7 @@ varying vec3 vNormal;
 
 const float PI = 3.141592653589793;
 
-vec3 gerstner(vec2 dir, float steep, float len, vec3 p, float t, inout vec3 tang, inout vec3 binorm) {
+vec3 gerstner(vec2 dir, float steep, float len, float phase, vec3 p, float t, inout vec3 tang, inout vec3 binorm) {
   float k = 2.0 * PI / len;
   float c = sqrt(9.81 / k) * uSpeed;
   float ca = cos(uDirAngle);
@@ -24,7 +24,7 @@ vec3 gerstner(vec2 dir, float steep, float len, vec3 p, float t, inout vec3 tang
   vec2 d = vec2(dir.x * ca - dir.y * sa, dir.x * sa + dir.y * ca);
   float a = steep * uAmplitude / k;   // 振幅
   float s = steep * uAmplitude;       // 等效坡度（法线用）
-  float f = k * (dot(d, p.xz) - c * t);
+  float f = k * (dot(d, p.xz) - c * t) + phase;
 
   tang   += vec3(-d.x * d.x * s * sin(f), d.x * s * cos(f), -d.x * d.y * s * sin(f));
   binorm += vec3(-d.x * d.y * s * sin(f), d.y * s * cos(f), -d.y * d.y * s * sin(f));

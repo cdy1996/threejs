@@ -34,7 +34,8 @@ const params = {
   tiltInfluence: 0.85,   // 随浪倾斜程度 0~1
   sway: 1.0,             // 摇摆幅度
   glassColor: '#9fd4b4',
-  follow: false,         // 相机跟随瓶子
+  bottleScale: 10,       // 瓶子显示大小
+  follow: true,          // 相机跟随瓶子
 };
 
 // ---------- 渲染器 / 场景 ----------
@@ -74,6 +75,10 @@ scene.add(hemi);
 
 const bottle = createBottle();
 scene.add(bottle.group);
+
+// 初始机位贴近瓶子，保证第一眼就能看到
+camera.position.set(bottle.pos.x + 10, 5.5, bottle.pos.z + 12);
+controls.target.copy(bottle.group.position);
 
 // 用天空生成环境贴图（玻璃瓶的反射/折射来源）
 const pmrem = new THREE.PMREMGenerator(renderer);
@@ -131,6 +136,7 @@ function sync() {
 
   bottle.glassMat.color.set(params.glassColor);
   bottle.glassMat.attenuationColor.set(params.glassColor);
+  bottle.group.scale.setScalar(params.bottleScale);
 }
 
 // ---------- 波面采样（供瓶子使用，与顶点着色器公式一致） ----------
@@ -181,6 +187,7 @@ fBottle.add(params, 'floatOffset', -0.05, 0.15, 0.005).name('吃水深度');
 fBottle.add(params, 'tiltInfluence', 0, 1, 0.01).name('随浪倾斜');
 fBottle.add(params, 'sway', 0, 2, 0.01).name('摇摆幅度');
 fBottle.addColor(params, 'glassColor').name('玻璃颜色').onChange(sync);
+fBottle.add(params, 'bottleScale', 0.5, 20, 0.1).name('瓶子大小').onChange(sync);
 fBottle.add(params, 'follow').name('相机跟随');
 fBottle.add({ respawn: () => bottle.respawn() }, 'respawn').name('重新投放');
 

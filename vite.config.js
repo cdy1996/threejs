@@ -15,7 +15,8 @@ export default defineConfig({
         blackhole: resolve(fileURLToPath(new URL('.', import.meta.url)), 'blackhole.html'),
         formulaBlackhole: resolve(fileURLToPath(new URL('.', import.meta.url)), 'formula-blackhole.html'),
         fire: resolve(fileURLToPath(new URL('.', import.meta.url)), 'fire.html'),
-        aquarium: resolve(fileURLToPath(new URL('.', import.meta.url)), 'aquarium.html')
+        aquarium: resolve(fileURLToPath(new URL('.', import.meta.url)), 'aquarium.html'),
+        ocean: resolve(fileURLToPath(new URL('.', import.meta.url)), 'ocean.html')
       }
     }
   }
