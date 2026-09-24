@@ -103,16 +103,12 @@ const surfaceFragment = /* glsl */ `
   uniform vec3 uDeepColor;
   uniform vec3 uSkyColor;
   uniform vec3 uSunDir;
-  uniform vec3 uUnderBlue1;
-  uniform vec3 uUnderBlue2;
   uniform float uTime;
-  uniform float uRadius;
-  uniform float uWaterTopY;
   uniform float uOpacity;
+  uniform float uUnderAlpha;
   uniform float uFoamOn;
   uniform float uFoamStrength;
   uniform float uFoamScale;
-  uniform float uFoamEdge;
   uniform float uFoamWake;
   uniform vec2 uBoatPos;
   uniform vec2 uBoatDir;
@@ -157,14 +153,28 @@ const surfaceFragment = /* glsl */ `
       vec3 n = normalize(vNormal);
       vec2 p = vWorldPos.xz;
 
-      // 太阳漫反射：背光坡面压暗，迎光坡面提亮
-      float ndl = max(dot(n, uSunDir), 0.0);
-      col = mix(uDeepColor, uShallowColor, 0.45 + crest * 0.4);
-      col *= mix(0.72, 1.2, ndl);
+      // 小尺度 noise 扰动法线：打碎正弦法线的周期性高光，形成随机波光
+      float nx = fbm(p * 3.0 + vec2(uTime * 0.10, uTime * 0.07)) - 0.5;
+      float nz = fbm(p * 3.0 - vec2(uTime * 0.08, uTime * 0.09) + 4.7) - 0.5;
+      n = normalize(n + vec3(nx, 0.0, nz) * 0.35);
 
-      // 波峰透光（SSS 近似）：朝太阳方向看浪尖，透出亮青绿
+      // 太阳漫反射：仅保留轻微坡面明暗（不再主导颜色分布）
+      float ndl = max(dot(n, uSunDir), 0.0);
+
+      // —— noise 驱动的深浅色块：两层反向流动 fbm，无方向周期 ——
+      // 明暗随机的"波浪感"来自颜色场，而非几何波形
+      float mottle = fbm(p * 1.1 + vec2(uTime * 0.055, -uTime * 0.04)) * 0.65
+                  + fbm(p * 2.4 - vec2(uTime * 0.045, uTime * 0.06) + 7.3) * 0.35;
+      col = mix(uDeepColor, uShallowColor, clamp(mottle, 0.0, 1.0));
+
+      // 伪立体光影：亮斑中心提亮、暗斑压暗，让色块"鼓起来"
+      col += vec3(0.10, 0.15, 0.13) * smoothstep(0.58, 0.88, mottle);
+      col *= 1.0 - 0.20 * smoothstep(0.42, 0.18, mottle);
+
+      // 轻微坡面明暗 + 波峰透光（SSS 减弱，只作逆光补充）
+      col *= mix(0.88, 1.12, ndl);
       float sss = pow(max(dot(V, normalize(uSunDir + vec3(0.0, 0.35, 0.0))), 0.0), 3.0);
-      col += vec3(0.30, 0.85, 0.62) * sss * smoothstep(0.1, 1.0, vWave) * 0.65;
+      col += vec3(0.30, 0.85, 0.62) * sss * smoothstep(0.3, 1.0, vWave) * 0.35;
 
       // 菲涅尔天空反射（掠射角）
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
@@ -180,24 +190,18 @@ const surfaceFragment = /* glsl */ `
       // ---------- 卡通厚泡沫：低频大团块 + 窄过渡硬边 + 细节噪声咬边（沸腾感） ----------
       if (uFoamOn > 0.5) {
         float t = uTime;
-        // 沿 X 拉长采样 → 条状浪沫（参考图的波峰泡沫条纹形态）
-        vec2 ps = vec2(p.x * 0.45, p.y);
-        // 大尺度形状场（决定"哪里有大团"）+ 细节噪声（只负责腐蚀边缘）
+        // 轻度拉长采样 → 碎沫点缀 + 轻微流动感
+        vec2 ps = p * vec2(0.7, 1.0);
+        // 大尺度形状场（决定"哪里有沫"）+ 细节噪声（腐蚀边缘）
         float shapeN = fbm(ps * uFoamScale + vec2(t * 0.08, -t * 0.05));
         float detailN = fbm(ps * uFoamScale * 3.1 - vec2(t * 0.12, t * 0.09) + 7.3);
 
-        // 1) 波峰泡沫：浪尖处连片条状白沫
-        float crestM = smoothstep(0.45, 0.9, vWave) + (1.0 - n.y) * 1.3;
-        float field1 = shapeN + crestM * 0.6 + (detailN - 0.5) * 0.35;
-        float f1 = smoothstep(0.66, 0.75, field1);
+        // 1) 碎沫点缀：独立 noise 阈值随机撒沫，波峰处概率略增（不再由波形主导）
+        float crestM = smoothstep(0.55, 0.95, vWave) * 0.35 + (1.0 - n.y) * 0.45;
+        float field1 = shapeN + crestM + (detailN - 0.5) * 0.35;
+        float f1 = smoothstep(0.70, 0.78, field1);
 
-        // 2) 边缘泡沫：厚实环带，内缘被圆齿 + 噪声咬出起伏
-        float rr = length(p) / uRadius;
-        float scallop = 0.85 + 0.15 * sin(atan(p.x, p.y) * 8.0 + t * 0.6 + shapeN * 5.0);
-        float inner = 1.0 - uFoamEdge * scallop;
-        float f2 = smoothstep(inner, inner + 0.05, rr);
-
-        // 3) 船尾尾迹：V 形扩散条带 + 船身周围湍流白沫，细节噪声咬边
+        // 2) 船尾尾迹：V 形扩散条带 + 船身周围湍流白沫，细节噪声咬边
         vec2 d = p - uBoatPos;
         float lx = dot(d, uBoatDir);
         float lz = dot(d, vec2(-uBoatDir.y, uBoatDir.x));
@@ -209,7 +213,7 @@ const surfaceFragment = /* glsl */ `
         float f3 = (vband + nearPatch * 0.9) * behind * distFade * uBoatScale;
         f3 *= smoothstep(0.55, 0.65, shapeN + (detailN - 0.5) * 0.4 + nearPatch * 0.5);
 
-        float foam = clamp(f1 + max(f2, f3 * uFoamWake), 0.0, 1.0) * uFoamStrength;
+        float foam = clamp(f1 + f3 * uFoamWake, 0.0, 1.0) * uFoamStrength;
         foam = clamp(foam, 0.0, 1.0);
 
         // 厚泡沫：接近纯白的团块，团内按形状噪声留一点水色阴影
@@ -217,32 +221,9 @@ const surfaceFragment = /* glsl */ `
         col = mix(col, foamCol, foam * 0.95);
       }
     } else {
-      // ---------- 水下仰视视角（参考图：深蓝环境 + 太阳亮斑光晕 + 波面透光斑驳） ----------
-      vec3 n = normalize(-vNormal); // 翻转法线
-      float ndl = max(dot(n, uSunDir), 0.0);
-
-      // 深水基色：颜色可在 GUI 调节（GUI 输入 sRGB，Color 管理自动转线性），波面斜度带来明暗
-      col = mix(uUnderBlue1, uUnderBlue2, ndl * 0.7 + 0.3);
-
-      // 大尺度透光斑驳（波面折射的明暗斑块，缓慢漂移）
-      float mottle = fbm(vWorldPos.xz * 0.9 + vec2(uTime * 0.06, -uTime * 0.045));
-      col *= 0.5 + 0.6 * smoothstep(0.3, 0.8, mottle);
-
-      // 浪尖下方透光更亮（跟随仰视亮色）
-      col += uUnderBlue2 * 1.4 * max(vWave, 0.0);
-
-      // 太阳亮斑（小而集中）+ 适度光晕（Snell 窗近似：太阳方向与水面平面的交点）
-      vec3 sunSurf = cameraPosition + uSunDir * ((uWaterTopY - cameraPosition.y) / max(uSunDir.y, 0.25));
-      float dSun = length(vWorldPos.xz - sunSurf.xz);
-      float glow = exp(-dSun * dSun * 1.6) * 1.25 + exp(-dSun * dSun * 0.6) * 0.22;
-      col += vec3(1.0, 0.98, 0.9) * glow;
-
-      // 太阳周围的碎亮斑（水面皱褶闪烁），只出现在亮斑附近
-      float sparkle = pow(fbm(vWorldPos.xz * 2.2 + vec2(uTime * 0.15, uTime * 0.1)), 3.0) * exp(-dSun * dSun * 0.5);
-      col += vec3(1.0) * sparkle * 0.9;
-
-      // 仰视水面透明度同样可调（深蓝水体底 + 太阳亮斑）
-      alpha = uOpacity;
+      // ---------- 水下仰视视角：默认全透明透出天空盒，不透明度可在控制面板调节 ----------
+      col = uSkyColor;
+      alpha = uUnderAlpha;
     }
 
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 0.95));
@@ -333,13 +314,11 @@ export function createAquarium() {
       uRadius: { value: TANK.waterRadius },
       uWaterTopY: { value: TANK.waterTopY },
       uOpacity: { value: 1.0 },
-      uUnderBlue1: { value: new THREE.Color(0.010, 0.060, 0.100) },
-      uUnderBlue2: { value: new THREE.Color(0.030, 0.150, 0.220) },
+      uUnderAlpha: { value: 0.0 },
       // 泡沫
       uFoamOn: { value: 1 },
       uFoamStrength: { value: 1.0 },
       uFoamScale: { value: 2.6 },
-      uFoamEdge: { value: 0.22 },
       uFoamWake: { value: 1.0 },
       uBoatPos: { value: new THREE.Vector2(-1.8, 0.6) },
       uBoatDir: { value: new THREE.Vector2(Math.cos(0.5), -Math.sin(0.5)) },

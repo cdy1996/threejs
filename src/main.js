@@ -7,6 +7,7 @@ import { createFishSchool } from './fish.js';
 import { createSurfaceProps } from './surface.js';
 import { createBubbles } from './bubbles.js';
 import { createCameraRig } from './camera.js';
+import { createSky } from './sky.js';
 import { createPostFX } from './postfx.js';
 
 // ---------- 基础初始化 ----------
@@ -33,6 +34,10 @@ scene.add(dirLight);
 scene.add(new THREE.AmbientLight(0xdff6f2, 0.75));
 const hemi = new THREE.HemisphereLight(0xbfeee8, 0x3d6b5e, 0.5);
 scene.add(hemi);
+
+// ---------- 天空盒 ----------
+const sky = createSky();
+scene.add(sky.mesh);
 
 // ---------- 场景内容 ----------
 const aquarium = createAquarium();
@@ -64,16 +69,14 @@ const params = {
   fishSpeed: 1.0,
   waveAmp: 0.2,
   surfaceOpacity: 1.0,
+  underAlpha: 0.0,
   waterOpacity: 1.0,
   surfaceShallow: '#7fdecd',
   surfaceDeep: '#0c5f6a',
-  underBlue1: '#1f475a',
-  underBlue2: '#346c80',
   bubbleCount: 150,
   foamOn: true,
   foamStrength: 1.0,
   foamScale: 2.6,
-  foamEdge: 0.22,
   foamWake: 1.0,
   bgColor: '#8fd0cc'
 };
@@ -98,7 +101,6 @@ const su = aquarium.surfaceMat.uniforms;
 fFoam.add(params, 'foamOn').name('开启').onChange(v => (su.uFoamOn.value = v ? 1 : 0));
 fFoam.add(params, 'foamStrength', 0, 2, 0.01).name('强度').onChange(v => (su.uFoamStrength.value = v));
 fFoam.add(params, 'foamScale', 2, 12, 0.1).name('细腻度').onChange(v => (su.uFoamScale.value = v));
-fFoam.add(params, 'foamEdge', 0.05, 0.6, 0.01).name('边缘宽度').onChange(v => (su.uFoamEdge.value = v));
 fFoam.add(params, 'foamWake', 0, 2, 0.01).name('船尾尾迹').onChange(v => (su.uFoamWake.value = v));
 
 const fFish = gui.addFolder('鱼群');
@@ -115,6 +117,9 @@ fWater.add(params, 'waveAmp', 0, 0.4, 0.005).name('波浪幅度').onChange(v => 
 fWater.add(params, 'surfaceOpacity', 0.1, 1, 0.01).name('水面透明度').onChange(v => {
   aquarium.surfaceMat.uniforms.uOpacity.value = v;
 });
+fWater.add(params, 'underAlpha', 0, 1, 0.01).name('仰视不透明度').onChange(v => {
+  aquarium.surfaceMat.uniforms.uUnderAlpha.value = v;
+});
 fWater.add(params, 'waterOpacity', 0.1, 1, 0.01).name('水体透明度').onChange(v => {
   aquarium.waterMat.uniforms.uWaterOpacity.value = v;
 });
@@ -123,12 +128,6 @@ fWater.addColor(params, 'surfaceShallow').name('水面亮色').onChange(v => {
 });
 fWater.addColor(params, 'surfaceDeep').name('水面深色').onChange(v => {
   aquarium.surfaceMat.uniforms.uDeepColor.value.set(v);
-});
-fWater.addColor(params, 'underBlue1').name('仰视深蓝').onChange(v => {
-  aquarium.surfaceMat.uniforms.uUnderBlue1.value.set(v);
-});
-fWater.addColor(params, 'underBlue2').name('仰视亮蓝').onChange(v => {
-  aquarium.surfaceMat.uniforms.uUnderBlue2.value.set(v);
 });
 
 const fEnv = gui.addFolder('环境');
@@ -179,6 +178,9 @@ function loop() {
   surfaceProps.update(t);
   cameraRig.update(dt);
   applyUnderwaterBlend(cameraRig.isUnderwater() ? 1 : 0, dt);
+
+  sky.uniforms.uTime.value = t;
+  sky.mesh.position.copy(camera.position);
 
   postfx.render(t);
 
