@@ -67,7 +67,7 @@ const params = {
   boatScale: 1.0,
   fishCount: 650,
   fishSpeed: 1.0,
-  waveAmp: 0.2,
+  waveAmp: 0.3,
   surfaceOpacity: 1.0,
   underAlpha: 0.0,
   waterOpacity: 1.0,
@@ -78,6 +78,18 @@ const params = {
   foamStrength: 1.0,
   foamScale: 2.6,
   foamWake: 1.0,
+  // 水面分层开关
+  lNorm: true,
+  lDiff: true,
+  lColor: true,
+  lRelief: true,
+  lSss: true,
+  lFres: true,
+  lSpec: true,
+  specSharp: 160,
+  specWideSharp: 24,
+  specInt: 1.5,
+  specWideInt: 0.16,
   bgColor: '#8fd0cc'
 };
 
@@ -103,6 +115,20 @@ fFoam.add(params, 'foamStrength', 0, 2, 0.01).name('强度').onChange(v => (su.u
 fFoam.add(params, 'foamScale', 2, 12, 0.1).name('细腻度').onChange(v => (su.uFoamScale.value = v));
 fFoam.add(params, 'foamWake', 0, 2, 0.01).name('船尾尾迹').onChange(v => (su.uFoamWake.value = v));
 
+// 水面分层：逐层开关，便于对照参考图判断哪层该留
+const fLayer = gui.addFolder('水面分层');
+fLayer.add(params, 'lNorm').name('① 法线扰动').onChange(v => (su.uLNormOn.value = v ? 1 : 0));
+fLayer.add(params, 'lDiff').name('② 坡面明暗').onChange(v => (su.uLDiffOn.value = v ? 1 : 0));
+fLayer.add(params, 'lColor').name('③ 深浅色块').onChange(v => (su.uLColorOn.value = v ? 1 : 0));
+fLayer.add(params, 'lRelief').name('④ 伪立体光影').onChange(v => (su.uLReliefOn.value = v ? 1 : 0));
+fLayer.add(params, 'lSss').name('⑤ 波峰透光').onChange(v => (su.uLSssOn.value = v ? 1 : 0));
+fLayer.add(params, 'lFres').name('⑥ 菲涅尔反射').onChange(v => (su.uLFresOn.value = v ? 1 : 0));
+fLayer.add(params, 'lSpec').name('⑦ 太阳高光').onChange(v => (su.uLSpecOn.value = v ? 1 : 0));
+fLayer.add(params, 'specSharp', 8, 600, 1).name('高光锐度').onChange(v => (su.uSpecSharp.value = v));
+fLayer.add(params, 'specWideSharp', 4, 120, 1).name('宽高光锐度').onChange(v => (su.uSpecWideSharp.value = v));
+fLayer.add(params, 'specInt', 0, 5, 0.01).name('高光强度').onChange(v => (su.uSpecInt.value = v));
+fLayer.add(params, 'specWideInt', 0, 1, 0.01).name('宽高光强度').onChange(v => (su.uSpecWideInt.value = v));
+
 const fFish = gui.addFolder('鱼群');
 fFish.add(params, 'fishCount', 100, 1500, 10).name('数量').onFinishChange(v => rebuildFish(v));
 fFish.add(params, 'fishSpeed', 0.2, 3, 0.01).name('速度');
@@ -111,7 +137,7 @@ const fBubble = gui.addFolder('气泡');
 fBubble.add(params, 'bubbleCount', 0, 400, 1).name('数量').onChange(v => bubbles.setCount(v));
 
 const fWater = gui.addFolder('水');
-fWater.add(params, 'waveAmp', 0, 0.4, 0.005).name('波浪幅度').onChange(v => {
+fWater.add(params, 'waveAmp', 0, 0.45, 0.005).name('波浪幅度').onChange(v => {
   aquarium.surfaceMat.uniforms.uWaveAmp.value = v;
 });
 fWater.add(params, 'surfaceOpacity', 0.1, 1, 0.01).name('水面透明度').onChange(v => {
@@ -175,7 +201,7 @@ function loop() {
   seabed.update(t);
   bubbles.update(t);
   fishSchool.update(t, dt * params.fishSpeed);
-  surfaceProps.update(t);
+  surfaceProps.update(t, params.waveAmp);
   cameraRig.update(dt);
   applyUnderwaterBlend(cameraRig.isUnderwater() ? 1 : 0, dt);
 

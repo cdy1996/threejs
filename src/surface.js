@@ -83,6 +83,32 @@ function buildLifeRing() {
   return ring;
 }
 
+// 与 aquarium.js surfaceVertex 的波形保持一致（改那边时同步这里）
+const WAVE_DEFS = [
+  [1.0, 0.45, 0.95, 0.5, 1.15],
+  [-0.35, 1.0, 1.3, 0.32, 0.9],
+  [0.8, -0.7, 2.1, 0.16, 1.6],
+  [-0.6, -0.8, 3.1, 0.09, 2.1]
+];
+const BOAT_YAW = 0.5;
+
+const smoothstep = (e0, e1, x) => {
+  const u = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1);
+  return u * u * (3 - 2 * u);
+};
+
+/** 世界坐标 (x,z) 处的水面高度，复现水面顶点着色器的波形 */
+function waveHeight(x, z, t, amp, radius) {
+  const damp = 1 - smoothstep(0.72, 0.995, Math.hypot(x, z) / radius) * 0.3;
+  let h = 0;
+  for (const [dx, dy, k, a, w] of WAVE_DEFS) {
+    const len = Math.hypot(dx, dy);
+    h += a * Math.sin(((dx / len) * x + (dy / len) * z) * k - t * w);
+  }
+  h += 0.14 * Math.sin(Math.hypot(x, z) * 1.4 - t * 1.7);
+  return h * damp * amp;
+}
+
 export function createSurfaceProps() {
   const group = new THREE.Group();
 
@@ -103,11 +129,25 @@ export function createSurfaceProps() {
     setBoatScale(s) {
       boat.scale.setScalar(s);
     },
-    update(t) {
-      boat.position.y = boatBaseY + Math.sin(t * 1.1) * 0.07;
-      boat.rotation.z = Math.sin(t * 0.9) * 0.05;
-      boat.rotation.x = Math.cos(t * 0.7) * 0.04;
-      ring.position.y = ringBaseY + Math.sin(t * 1.4 + 1.2) * 0.06;
+    update(t, amp = 0.3) {
+      const r = TANK.waterRadius;
+
+      // 船：高度贴合波面，倾斜由波面数值梯度求出
+      const bx = boat.position.x;
+      const bz = boat.position.z;
+      const bh = waveHeight(bx, bz, t, amp, r);
+      boat.position.y = boatBaseY + bh;
+
+      const eps = 0.4;
+      const dhdx = (waveHeight(bx + eps, bz, t, amp, r) - bh) / eps;
+      const dhdz = (waveHeight(bx, bz + eps, t, amp, r) - bh) / eps;
+      const c = Math.cos(BOAT_YAW);
+      const s = Math.sin(BOAT_YAW);
+      boat.rotation.z = dhdx * c - dhdz * s;
+      boat.rotation.x = -(dhdx * s + dhdz * c);
+
+      // 救生圈：跟随波高 + 轻微摇摆
+      ring.position.y = ringBaseY + waveHeight(ring.position.x, ring.position.z, t, amp, r);
       ring.rotation.z = Math.sin(t * 0.8) * 0.08;
     }
   };

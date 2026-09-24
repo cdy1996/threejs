@@ -22,27 +22,35 @@ const waterVertex = /* glsl */ `
 const waterFragment = /* glsl */ `
   uniform vec3 uShallowColor;
   uniform vec3 uDeepColor;
+  uniform vec3 uSkyColor;
   uniform float uWaterTopY;
   uniform float uWaterBottomY;
   uniform float uUnderwater;
   uniform float uWaterOpacity;
-  uniform float uTime;
   varying vec3 vWorldPos;
   varying vec3 vWorldNormal;
 
   void main() {
+    vec3 N = normalize(vWorldNormal);
+    vec3 V = normalize(cameraPosition - vWorldPos);
+
     float depth = clamp((uWaterTopY - vWorldPos.y) / (uWaterTopY - uWaterBottomY), 0.0, 1.0);
-    vec3 col = mix(uShallowColor, uDeepColor, pow(depth, 1.35));
+    vec3 col = mix(uShallowColor, uDeepColor, pow(depth, 1.25));
 
-    float band = sin(vWorldPos.y * 6.0 - uTime * 1.4 + vWorldPos.x * 1.5) * 0.5 + 0.5;
-    col += vec3(0.05, 0.09, 0.08) * band * (1.0 - depth);
+    // 垂直光带：绕柱分布、沿 Y 不变（静态水色深浅）
+    float ang = atan(vWorldPos.z, vWorldPos.x);
+    float band = sin(ang * 4.0) * 0.5 + 0.5;
+    col += vec3(0.04, 0.07, 0.06) * band * (1.0 - depth * 0.7);
 
-    float facing = max(dot(vWorldNormal, vec3(0.0, 0.0, 1.0)), 0.25);
-    float alpha = mix(0.16 + depth * 0.28, 0.55 + depth * 0.25, uUnderwater);
-    alpha *= mix(1.0, facing, 0.5);
+    // 菲涅尔：掠射角出现稳定亮边（玻璃感），不再依赖相机方位
+    float fres = pow(1.0 - abs(dot(N, V)), 3.0);
+    col = mix(col, uSkyColor, fres * 0.5);
+
+    float alpha = mix(0.13 + depth * 0.20, 0.48 + depth * 0.24, uUnderwater);
+    alpha = mix(alpha, 0.82, fres * 0.6);
     if (!gl_FrontFacing) {
-      col = mix(col, uDeepColor, 0.7);
-      alpha = max(alpha, mix(0.18, 0.62, uUnderwater));
+      col = mix(col, uDeepColor, 0.6);
+      alpha = max(alpha, mix(0.15, 0.56, uUnderwater));
     }
     gl_FragColor = vec4(col, clamp(alpha * uWaterOpacity, 0.0, 0.95));
   }
@@ -113,6 +121,19 @@ const surfaceFragment = /* glsl */ `
   uniform vec2 uBoatPos;
   uniform vec2 uBoatDir;
   uniform float uBoatScale;
+  // ---- 分层开关（1=开 0=关），供面板逐层对比 ----
+  uniform float uLNormOn;
+  uniform float uLDiffOn;
+  uniform float uLColorOn;
+  uniform float uLReliefOn;
+  uniform float uLSssOn;
+  uniform float uLFresOn;
+  uniform float uLSpecOn;
+  // 太阳高光可调参数
+  uniform float uSpecSharp;
+  uniform float uSpecWideSharp;
+  uniform float uSpecInt;
+  uniform float uSpecWideInt;
   varying vec3 vWorldPos;
   varying vec3 vNormal;
   varying float vWave;
@@ -153,39 +174,51 @@ const surfaceFragment = /* glsl */ `
       vec3 n = normalize(vNormal);
       vec2 p = vWorldPos.xz;
 
-      // 小尺度 noise 扰动法线：打碎正弦法线的周期性高光，形成随机波光
-      float nx = fbm(p * 3.0 + vec2(uTime * 0.10, uTime * 0.07)) - 0.5;
-      float nz = fbm(p * 3.0 - vec2(uTime * 0.08, uTime * 0.09) + 4.7) - 0.5;
-      n = normalize(n + vec3(nx, 0.0, nz) * 0.35);
+      // ① 小尺度 noise 扰动法线：打碎正弦法线的周期性高光，形成随机波光
+      if (uLNormOn > 0.5) {
+        float nx = fbm(p * 3.0 + vec2(uTime * 0.10, uTime * 0.07)) - 0.5;
+        float nz = fbm(p * 3.0 - vec2(uTime * 0.08, uTime * 0.09) + 4.7) - 0.5;
+        n = normalize(n + vec3(nx, 0.0, nz) * 0.35);
+      }
 
-      // 太阳漫反射：仅保留轻微坡面明暗（不再主导颜色分布）
+      // ② 太阳漫反射：仅保留轻微坡面明暗
       float ndl = max(dot(n, uSunDir), 0.0);
 
-      // —— noise 驱动的深浅色块：两层反向流动 fbm，无方向周期 ——
-      // 明暗随机的"波浪感"来自颜色场，而非几何波形
-      float mottle = fbm(p * 1.1 + vec2(uTime * 0.055, -uTime * 0.04)) * 0.65
-                  + fbm(p * 2.4 - vec2(uTime * 0.045, uTime * 0.06) + 7.3) * 0.35;
-      col = mix(uDeepColor, uShallowColor, clamp(mottle, 0.0, 1.0));
+      // ③ noise 驱动的深浅色块（"模拟海面"的蓝色变化来源，关掉即回到单一水色）
+      col = uShallowColor;
+      float mottle = 0.5;
+      if (uLColorOn > 0.5) {
+        mottle = fbm(p * 1.1 + vec2(uTime * 0.055, -uTime * 0.04)) * 0.65
+               + fbm(p * 2.4 - vec2(uTime * 0.045, uTime * 0.06) + 7.3) * 0.35;
+        col = mix(uDeepColor, uShallowColor, clamp(mottle, 0.0, 1.0));
+      }
 
-      // 伪立体光影：亮斑中心提亮、暗斑压暗，让色块"鼓起来"
-      col += vec3(0.10, 0.15, 0.13) * smoothstep(0.58, 0.88, mottle);
-      col *= 1.0 - 0.20 * smoothstep(0.42, 0.18, mottle);
+      // ④ 伪立体光影：亮斑中心提亮、暗斑压暗，让色块"鼓起来"
+      if (uLReliefOn > 0.5) {
+        col += vec3(0.10, 0.15, 0.13) * smoothstep(0.58, 0.88, mottle);
+        col *= 1.0 - 0.20 * smoothstep(0.42, 0.18, mottle);
+      }
 
-      // 轻微坡面明暗 + 波峰透光（SSS 减弱，只作逆光补充）
-      col *= mix(0.88, 1.12, ndl);
-      float sss = pow(max(dot(V, normalize(uSunDir + vec3(0.0, 0.35, 0.0))), 0.0), 3.0);
-      col += vec3(0.30, 0.85, 0.62) * sss * smoothstep(0.3, 1.0, vWave) * 0.35;
+      // ⑤ 轻微坡面明暗 + 波峰透光（SSS）
+      if (uLDiffOn > 0.5) col *= mix(0.88, 1.12, ndl);
+      if (uLSssOn > 0.5) {
+        float sss = pow(max(dot(V, normalize(uSunDir + vec3(0.0, 0.35, 0.0))), 0.0), 3.0);
+        col += vec3(0.30, 0.85, 0.62) * sss * smoothstep(0.3, 1.0, vWave) * 0.35;
+      }
 
-      // 菲涅尔天空反射（掠射角）
+      // ⑥ 菲涅尔天空反射（掠射角）
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
-      col = mix(col, uSkyColor, fres * 0.7);
-      // 太阳镜面高光
-      vec3 R = reflect(-V, n);
-      float spec = pow(max(dot(R, uSunDir), 0.0), 160.0);
-      float specWide = pow(max(dot(R, uSunDir), 0.0), 24.0);
-      col += vec3(1.0, 0.97, 0.88) * (spec * 1.5 + specWide * 0.16);
-      // 不透明海面（参考图）：颜色完全由着色决定，不透出下面的鱼和海底
-      alpha = uOpacity;
+      if (uLFresOn > 0.5) col = mix(col, uSkyColor, fres * 0.7);
+
+      // ⑦ 太阳镜面高光：白色由光照反射自然产生，靠法线起伏显出水面不平
+      if (uLSpecOn > 0.5) {
+        vec3 R = reflect(-V, n);
+        float spec = pow(max(dot(R, uSunDir), 0.0), uSpecSharp);
+        float specWide = pow(max(dot(R, uSunDir), 0.0), uSpecWideSharp);
+        col += vec3(1.0, 0.97, 0.88) * (spec * uSpecInt + specWide * uSpecWideInt);
+      }
+      // 半透明水膜：正视角透出水下的鱼和海底，掠射角反射天空而变实
+      alpha = mix(0.55, 0.92, fres) * uOpacity;
 
       // ---------- 卡通厚泡沫：低频大团块 + 窄过渡硬边 + 细节噪声咬边（沸腾感） ----------
       if (uFoamOn > 0.5) {
@@ -219,6 +252,8 @@ const surfaceFragment = /* glsl */ `
         // 厚泡沫：接近纯白的团块，团内按形状噪声留一点水色阴影
         vec3 foamCol = vec3(0.99, 0.99, 0.97) * (0.9 + 0.1 * shapeN);
         col = mix(col, foamCol, foam * 0.95);
+        // 泡沫不跟着水膜一起变透明，否则会透出下面的鱼
+        alpha = max(alpha, foam * 0.9);
       }
     } else {
       // ---------- 水下仰视视角：默认全透明透出天空盒，不透明度可在控制面板调节 ----------
@@ -278,22 +313,26 @@ export function createAquarium() {
     uniforms: {
       uShallowColor: { value: new THREE.Color(COLORS.waterShallow) },
       uDeepColor: { value: new THREE.Color(COLORS.waterDeep) },
+      uSkyColor: { value: new THREE.Color(0xbfeae6) },
       uWaterTopY: { value: TANK.waterTopY },
       uWaterBottomY: { value: TANK.waterBottomY },
       uUnderwater: { value: 0 },
-      uWaterOpacity: { value: 1.0 },
-      uTime: { value: 0 }
+      uWaterOpacity: { value: 1.0 }
     },
     vertexShader: waterVertex,
     fragmentShader: waterFragment
   });
-  const overlap = 0.3; // 水柱上沿高出水面，遮住波浪边缘接缝（边缘波幅保留 70%，最大浪峰 < 0.3）
-  const waterH = TANK.waterTopY - TANK.waterBottomY + overlap;
+  // 上沿高出水面盖住波浪起伏，下沿沉进底座避免露缝
+  const overlapTop = 0.4;
+  const sinkBottom = 0.3;
+  const waterTop = TANK.waterTopY + overlapTop;
+  const waterBottom = TANK.waterBottomY - sinkBottom;
+  const waterH = waterTop - waterBottom;
   const water = new THREE.Mesh(
     new THREE.CylinderGeometry(TANK.waterRadius, TANK.waterRadius, waterH, 64, 1, true),
     waterMat
   );
-  water.position.y = TANK.waterBottomY + waterH / 2 - overlap;
+  water.position.y = (waterTop + waterBottom) / 2;
   water.renderOrder = 10;
   group.add(water);
 
@@ -303,14 +342,14 @@ export function createAquarium() {
   const surfaceMat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
-    depthWrite: true,
+    depthWrite: false,
     uniforms: {
       uShallowColor: { value: new THREE.Color(COLORS.waterShallow) },
       uDeepColor: { value: new THREE.Color(COLORS.waterDeep) },
       uSkyColor: { value: new THREE.Color(0xbfeae6) },
       uSunDir: { value: sunDir },
       uTime: { value: 0 },
-      uWaveAmp: { value: 0.2 },
+      uWaveAmp: { value: 0.3 },
       uRadius: { value: TANK.waterRadius },
       uWaterTopY: { value: TANK.waterTopY },
       uOpacity: { value: 1.0 },
@@ -322,7 +361,19 @@ export function createAquarium() {
       uFoamWake: { value: 1.0 },
       uBoatPos: { value: new THREE.Vector2(-1.8, 0.6) },
       uBoatDir: { value: new THREE.Vector2(Math.cos(0.5), -Math.sin(0.5)) },
-      uBoatScale: { value: 1.0 }
+      uBoatScale: { value: 1.0 },
+      // 分层开关
+      uLNormOn: { value: 1 },
+      uLDiffOn: { value: 1 },
+      uLColorOn: { value: 1 },
+      uLReliefOn: { value: 1 },
+      uLSssOn: { value: 1 },
+      uLFresOn: { value: 1 },
+      uLSpecOn: { value: 1 },
+      uSpecSharp: { value: 160 },
+      uSpecWideSharp: { value: 24 },
+      uSpecInt: { value: 1.5 },
+      uSpecWideInt: { value: 0.16 }
     },
     vertexShader: surfaceVertex,
     fragmentShader: surfaceFragment
@@ -337,7 +388,6 @@ export function createAquarium() {
     waterMat,
     surfaceMat,
     update(t) {
-      waterMat.uniforms.uTime.value = t;
       surfaceMat.uniforms.uTime.value = t;
     }
   };
