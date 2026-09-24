@@ -18,7 +18,8 @@ export default defineConfig({
         aquarium: resolve(fileURLToPath(new URL('.', import.meta.url)), 'aquarium.html'),
         ocean: resolve(fileURLToPath(new URL('.', import.meta.url)), 'ocean.html'),
         meadow: resolve(fileURLToPath(new URL('.', import.meta.url)), 'meadow.html'),
-        grassland: resolve(fileURLToPath(new URL('.', import.meta.url)), 'grassland.html')
+        grassland: resolve(fileURLToPath(new URL('.', import.meta.url)), 'grassland.html'),
+        seasun: resolve(fileURLToPath(new URL('.', import.meta.url)), 'seasun.html')
       }
     }
   }

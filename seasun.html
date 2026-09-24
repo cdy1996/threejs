@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>海面 · 天空与太阳 · Sea &amp; Sun</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420; }
+  body { font-family: "PingFang SC", "Microsoft YaHei", sans-serif; user-select: none; }
+  #scene-container { position: fixed; inset: 0; }
+  #scene-container canvas { display: block; }
+  .title {
+    position: fixed; top: 26px; left: 32px; z-index: 2; pointer-events: none;
+    color: #f4ecd8; letter-spacing: 4px;
+  }
+  .title h1 { font-size: 22px; font-weight: 600; text-shadow: 0 2px 14px rgba(0,0,0,.55); }
+  .title p { margin-top: 6px; font-size: 12px; color: #c8bfa6; letter-spacing: 2px; }
+  .hint {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 2;
+    color: rgba(244, 236, 216, .6); font-size: 12px; letter-spacing: 2px; pointer-events: none;
+  }
+  .lil-gui { --background-color: rgba(10, 20, 32, .88); --title-background-color: rgba(24, 40, 58, .9); }
+</style>
+</head>
+<body>
+<div id="scene-container"></div>
+<div class="title">
+  <h1>海面 · 天空与太阳</h1>
+  <p>SEA, SKY &amp; SUN · THREE.JS</p>
+</div>
+<div class="hint">拖动旋转 · 滚轮缩放 · 右上角面板调节参数</div>
+<script>
+  window.__errs = [];
+  window.addEventListener('error', (e) => {
+    window.__errs.push((e.message || 'error') + ' @' + (e.filename || '') + ':' + (e.lineno || ''));
+    const hint = document.querySelector('.hint');
+    if (hint) { hint.style.color = '#ff8080'; hint.textContent = 'ERROR: ' + window.__errs.join(' | '); }
+  });
+</script>
+<script type="module" src="/src/seasun/main.js"></script>
+</body>
+</html>
