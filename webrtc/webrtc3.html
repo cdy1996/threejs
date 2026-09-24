@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC 手动信令交换</title>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --card: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --radius: 12px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 1.5rem;
+            display: flex;
+            justify-content: center;
+        }
+        .container { max-width: 650px; width: 100%; display: flex; flex-direction: column; gap: 1.25rem; }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        }
+        h2 { font-size: 1.2rem; margin-bottom: 0.75rem; }
+        .flex-row { display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+        button {
+            border: none;
+            background: var(--primary);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 0.9rem;
+            white-space: nowrap;
+        }
+        button:hover { background: var(--primary-hover); }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        button.secondary { background: #f1f5f9; color: #334155; border: 1px solid var(--border); }
+        button.secondary:hover { background: #e2e8f0; }
+        textarea {
+            width: 100%;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            padding: 0.5rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            resize: vertical;
+            margin: 0.4rem 0;
+            background: #f8fafc;
+        }
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            background: #f1f5f9;
+            color: #475569;
+            margin-left: 0.5rem;
+        }
+        .badge.ok { background: #dcfce7; color: #166534; }
+        .badge.err { background: #fee2e2; color: #991b1b; }
+        .log-box {
+            background: #1e293b;
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            padding: 0.75rem;
+            border-radius: var(--radius);
+            height: 160px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .msg-list {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.5rem 0.75rem;
+            height: 80px;
+            overflow-y: auto;
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+        .hidden { display: none !important; }
+        .step { font-weight: 600; color: var(--primary); margin-top: 0.75rem; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="card">
+        <h2>🔗 WebRTC 手动信令交换</h2>
+        <p style="color:var(--muted); font-size:0.9rem;">
+            无需服务器 — 复制粘贴 SDP 文本即可建立 P2P 连接
+        </p>
+    </div>
+
+    <div class="card">
+        <div class="flex-row">
+            <button id="btnOffer" onclick="startAsOffer()">📤 我是发起方</button>
+            <button id="btnAnswer" onclick="startAsAnswer()">📥 我是接收方</button>
+            <button class="secondary" onclick="resetAll()">🔄 重置</button>
+            <span>角色：<span id="roleBadge" class="badge">未选</span></span>
+            <span>状态：<span id="statusBadge" class="badge">未连接</span></span>
+        </div>
+    </div>
+
+    <!-- 发起方区域 -->
+    <div class="card hidden" id="offerCard">
+        <h2>📤 步骤1：生成 Offer</h2>
+        <p style="color:var(--muted); font-size:0.85rem;">点击按钮生成 Offer，然后把整个文本复制发给对方</p>
+        <button onclick="generateOffer()">生成 Offer</button>
+        <textarea id="offerText" rows="6" readonly placeholder="Offer 将显示在这里..."></textarea>
+        <button onclick="copyText('offerText')">📋 复制 Offer</button>
+
+        <div class="step">🔓 步骤3：粘贴对方发回的 Answer</div>
+        <p style="color:var(--muted); font-size:0.85rem;">收到对方的 Answer 后，粘贴到这里完成连接</p>
+        <textarea id="pasteAnswer" rows="6" placeholder="在此粘贴 Answer..."></textarea>
+        <button onclick="processAnswer()">✅ 完成连接</button>
+    </div>
+
+    <!-- 接收方区域 -->
+    <div class="card hidden" id="answerCard">
+        <h2>📥 步骤2：粘贴 Offer 并生成 Answer</h2>
+        <p style="color:var(--muted); font-size:0.85rem;">先粘贴对方发来的 Offer，然后生成 Answer 发回去</p>
+        <textarea id="pasteOffer" rows="6" placeholder="在此粘贴 Offer..."></textarea>
+        <button onclick="processOffer()">生成 Answer</button>
+        <textarea id="answerText" rows="6" readonly placeholder="Answer 将显示在这里..."></textarea>
+        <button onclick="copyText('answerText')">📋 复制 Answer</button>
+    </div>
+
+    <!-- 消息 -->
+    <div class="card">
+        <h2>💬 消息</h2>
+        <div class="msg-list" id="msgList">等待连接...</div>
+        <div class="flex-row">
+            <input type="text" id="msgInput" placeholder="输入消息..." disabled style="flex:1; padding:0.5rem; border:1px solid var(--border); border-radius:8px;" />
+            <button id="sendBtn" disabled onclick="sendMsg()">发送</button>
+        </div>
+    </div>
+
+    <!-- 日志 -->
+    <div class="card">
+        <h2>📋 日志</h2>
+        <div class="log-box" id="logBox"></div>
+    </div>
+</div>
+
+<script>
+    let pc = null;
+    let dc = null;
+    let isOfferer = false;
+
+    const rtcConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    };
+
+    const $ = (s) => document.querySelector(s);
+    const log = (msg) => {
+        const b = $('#logBox');
+        if (!b) return;
+        b.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+        b.scrollTop = b.scrollHeight;
+    };
+
+    function setStatus(text, ok) {
+        const b = $('#statusBadge');
+        if (!b) return;
+        b.textContent = text;
+        b.className = ok ? 'badge ok' : 'badge err';
+    }
+
+    function copyText(id) {
+        const ta = document.getElementById(id);
+        if (!ta) return;
+        ta.select();
+        document.execCommand('copy');
+        log('📋 已复制');
+    }
+
+    // ---------- 重置 ----------
+    function resetAll() {
+        if (pc) { pc.close(); pc = null; }
+        if (dc) { dc.close(); dc = null; }
+        isOfferer = false;
+
+        ['offerCard','answerCard'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        });
+
+        ['offerText','answerText','pasteOffer','pasteAnswer'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+        const roleBadge = $('#roleBadge');
+        if (roleBadge) { roleBadge.textContent = '未选'; roleBadge.className = 'badge'; }
+        setStatus('未连接', false);
+
+        const mi = $('#msgInput'); if (mi) mi.disabled = true;
+        const sb = $('#sendBtn'); if (sb) sb.disabled = true;
+        const ml = $('#msgList'); if (ml) ml.innerHTML = '等待连接...';
+
+        const bo = $('#btnOffer'); if (bo) bo.disabled = false;
+        const ba = $('#btnAnswer'); if (ba) ba.disabled = false;
+
+        log('🔄 已重置');
+    }
+    window.resetAll = resetAll;
+
+    // ---------- WebRTC 核心 ----------
+    function createPC() {
+        pc = new RTCPeerConnection(rtcConfig);
+
+        pc.oniceconnectionstatechange = () => {
+            log(`🌐 ICE: ${pc.iceConnectionState}`);
+            if (pc.iceConnectionState === 'connected') setStatus('已连接', true);
+            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') setStatus('断开', false);
+        };
+
+        if (isOfferer) {
+            dc = pc.createDataChannel('chat');
+            setupDC(dc);
+        } else {
+            pc.ondatachannel = (e) => setupDC(e.channel);
+        }
+        return pc;
+    }
+
+    function setupDC(channel) {
+        dc = channel;
+        dc.onopen = () => {
+            log('✅ 数据通道已打开');
+            setStatus('已连接', true);
+            const mi = $('#msgInput'); if (mi) mi.disabled = false;
+            const sb = $('#sendBtn'); if (sb) sb.disabled = false;
+            const ml = $('#msgList'); if (ml) ml.innerHTML = '';
+        };
+        dc.onmessage = (e) => {
+            log('📩 收到: ' + e.data);
+            const ml = $('#msgList');
+            if (ml) { ml.innerHTML += '<div>👤 对方: ' + e.data + '</div>'; ml.scrollTop = ml.scrollHeight; }
+        };
+        dc.onclose = () => { log('⚠️ 通道关闭'); setStatus('断开', false); };
+    }
+
+    function sendMsg() {
+        const mi = $('#msgInput');
+        const txt = mi ? mi.value.trim() : '';
+        if (!txt || !dc || dc.readyState !== 'open') return;
+        dc.send(txt);
+        const ml = $('#msgList');
+        if (ml) { ml.innerHTML += '<div>🧑 我: ' + txt + '</div>'; ml.scrollTop = ml.scrollHeight; }
+        mi.value = '';
+    }
+
+    function waitForIceComplete() {
+        return new Promise((resolve) => {
+            if (pc.iceGatheringState === 'complete') resolve();
+            else pc.onicegatheringstatechange = () => {
+                if (pc.iceGatheringState === 'complete') resolve();
+            };
+        });
+    }
+
+    // ---------- 发起方 ----------
+    async function startAsOffer() {
+        resetAll();
+        isOfferer = true;
+        $('#roleBadge').textContent = '发起方';
+        $('#roleBadge').className = 'badge ok';
+        $('#btnOffer').disabled = true;
+        $('#btnAnswer').disabled = true;
+        document.getElementById('offerCard').classList.remove('hidden');
+        createPC();
+        log('📤 请点击"生成 Offer"');
+    }
+
+    async function generateOffer() {
+        if (!pc) { log('❌ 请先选择角色'); return; }
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            log('⏳ 收集 ICE 候选...');
+            await waitForIceComplete();
+            const sdp = JSON.stringify(pc.localDescription);
+            document.getElementById('offerText').value = sdp;
+            log('✅ Offer 已生成，复制发给对方');
+        } catch (e) {
+            log('❌ 失败: ' + e.message);
+        }
+    }
+
+    async function processAnswer() {
+        const raw = document.getElementById('pasteAnswer').value.trim();
+        if (!raw) return log('❌ 请粘贴 Answer');
+        try {
+            const desc = JSON.parse(raw);
+            await pc.setRemoteDescription(new RTCSessionDescription(desc));
+            log('✅ Answer 已设置，连接中...');
+        } catch (e) {
+            log('❌ 解析失败: ' + e.message);
+        }
+    }
+
+    // ---------- 接收方 ----------
+    async function startAsAnswer() {
+        resetAll();
+        isOfferer = false;
+        $('#roleBadge').textContent = '接收方';
+        $('#roleBadge').className = 'badge ok';
+        $('#btnOffer').disabled = true;
+        $('#btnAnswer').disabled = true;
+        document.getElementById('answerCard').classList.remove('hidden');
+        log('📥 请粘贴对方发来的 Offer');
+    }
+
+    async function processOffer() {
+        const raw = document.getElementById('pasteOffer').value.trim();
+        if (!raw) return log('❌ 请粘贴 Offer');
+        try {
+            const desc = JSON.parse(raw);
+            createPC();
+            await pc.setRemoteDescription(new RTCSessionDescription(desc));
+            log('📝 Offer 已设置，生成 Answer...');
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await waitForIceComplete();
+            const sdp = JSON.stringify(pc.localDescription);
+            document.getElementById('answerText').value = sdp;
+            log('✅ Answer 已生成，复制发回给对方');
+        } catch (e) {
+            log('❌ 处理失败: ' + e.message);
+        }
+    }
+
+    // 回车发送
+    $('#msgInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') sendMsg();
+    });
+
+    log('🚀 就绪');
+</script>
+</body>
+</html>

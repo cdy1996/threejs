@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC 多信令方案 Demo</title>
+    <script src="https://unpkg.com/mqtt@4.3.7/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --card: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --success: #10b981;
+            --danger: #ef4444;
+            --radius: 12px;
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 720px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #0f172a;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .mode-switch {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .mode-btn {
+            flex: 1;
+            min-width: 120px;
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            background: white;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text);
+        }
+        .mode-btn.active {
+            border-color: var(--primary);
+            background: #eff6ff;
+            color: var(--primary);
+            font-weight: 600;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+        }
+        .control-row {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        input, button, textarea {
+            font-family: inherit;
+            font-size: 0.95rem;
+            border-radius: 8px;
+        }
+        input[type="text"], textarea {
+            border: 1px solid var(--border);
+            padding: 0.6rem 0.75rem;
+            flex: 1;
+            min-width: 150px;
+            background: white;
+        }
+        button {
+            border: none;
+            background: var(--primary);
+            color: white;
+            padding: 0.6rem 1.2rem;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        button:hover { background: var(--primary-hover); }
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1px solid var(--border);
+        }
+        button.secondary:hover { background: #e2e8f0; }
+        .log-box {
+            background: #1e293b;
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.85rem;
+            padding: 1rem;
+            border-radius: var(--radius);
+            height: 180px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .message-area {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .message-list {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.75rem;
+            height: 100px;
+            overflow-y: auto;
+            font-size: 0.95rem;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: #f1f5f9;
+            color: #475569;
+        }
+        .status-badge.connected {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .qr-container {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .qr-video {
+            width: 200px;
+            height: 200px;
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            object-fit: cover;
+        }
+        canvas { display: none; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔗 WebRTC 信令测试</h1>
+
+    <div class="card">
+        <div class="mode-switch" id="modeSwitch">
+            <button class="mode-btn active" data-mode="mqtt">📡 MQTT 房间</button>
+            <button class="mode-btn" data-mode="qrcode">📱 二维码 / 粘贴</button>
+            <button class="mode-btn" data-mode="discovery">🔍 自动发现 (MQTT)</button>
+        </div>
+        <p style="font-size:0.9rem; color:var(--muted); margin-top:0.75rem;" id="modeDesc">
+            使用公共 MQTT 服务器交换信令，输入相同房间号即可连接。
+        </p>
+    </div>
+
+    <div class="card" id="controlPanel"></div>
+
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <span><strong>连接状态：</strong><span id="connectionStatus" class="status-badge">未连接</span></span>
+            <button id="resetBtn" class="secondary" onclick="resetAll()">🔄 重置</button>
+        </div>
+        <div class="message-area">
+            <div class="message-list" id="messageList">等待消息...</div>
+            <div class="control-row">
+                <input type="text" id="messageInput" placeholder="输入消息..." disabled />
+                <button id="sendBtn" disabled onclick="sendMessage()">发送</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <strong>📋 信令日志</strong>
+        <div class="log-box" id="logBox"></div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ---------- 全局变量 ----------
+        let pc = null;
+        let dc = null;
+        let mqttClient = null;
+        let currentMode = 'mqtt';
+        let connectionEstablished = false;
+        let myClientId = '';
+
+        let roomName = '';
+        let discoveryId = '';
+        let discoveryPaired = false;
+        let isOfferer = false;
+
+        let pendingIceCandidates = [];
+
+        let qrStream = null;
+        let qrScanning = false;
+
+        const rtcConfig = {
+            iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        };
+
+        // ---------- 工具函数 ----------
+        const $ = (sel) => document.querySelector(sel);
+        const log = (msg) => {
+            const box = $('#logBox');
+            const time = new Date().toLocaleTimeString();
+            box.textContent += `[${time}] ${msg}\n`;
+            box.scrollTop = box.scrollHeight;
+        };
+        const setStatus = (text, connected = false) => {
+            const el = $('#connectionStatus');
+            el.textContent = text;
+            el.className = connected ? 'status-badge connected' : 'status-badge';
+        };
+        const enableChat = (enabled) => {
+            $('#messageInput').disabled = !enabled;
+            $('#sendBtn').disabled = !enabled;
+        };
+
+        function appendMessage(text, from = '对方') {
+            const list = $('#messageList');
+            const div = document.createElement('div');
+            div.textContent = `[${from}] ${text}`;
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+        }
+
+        function flushPendingIceCandidates() {
+            if (!pc || !pc.remoteDescription) {
+                return;
+            }
+            const candidates = pendingIceCandidates.slice();
+            pendingIceCandidates = [];
+            if (candidates.length > 0) {
+                log(`📥 处理缓存的 ${candidates.length} 个 ICE 候选`);
+            }
+            candidates.forEach(c => {
+                pc.addIceCandidate(new RTCIceCandidate(c))
+                    .then(() => log('✅ ICE 候选添加成功'))
+                    .catch(e => log(`❌ 添加 ICE 候选失败: ${e.message}`));
+            });
+        }
+
+        // ---------- 重置 ----------
+        window.resetAll = function() {
+            if (pc) { pc.close(); pc = null; }
+            if (dc) { dc.close(); dc = null; }
+            if (mqttClient) {
+                mqttClient.end(true);
+                mqttClient = null;
+            }
+            stopQrScan();
+            connectionEstablished = false;
+            discoveryPaired = false;
+            isOfferer = false;
+            discoveryId = '';
+            roomName = '';
+            pendingIceCandidates = [];
+            setStatus('未连接');
+            enableChat(false);
+            $('#messageList').innerHTML = '等待消息...';
+            log('已重置');
+            renderControlPanel();
+        };
+
+        // ---------- 数据通道 ----------
+        function setupDataChannel(channel) {
+            dc = channel;
+            dc.onmessage = (e) => {
+                log(`📩 收到消息: ${e.data}`);
+                appendMessage(e.data, '对方');
+            };
+            dc.onopen = () => {
+                log('✅ 数据通道已打开');
+                setStatus('已连接', true);
+                connectionEstablished = true;
+                enableChat(true);
+            };
+            dc.onclose = () => {
+                log('⚠️ 数据通道关闭');
+                setStatus('通道关闭');
+                enableChat(false);
+                connectionEstablished = false;
+            };
+        }
+
+        function createPeerConnection() {
+            if (pc) pc.close();
+            pc = new RTCPeerConnection(rtcConfig);
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    log(`🧊 本地 ICE 候选: ${event.candidate.candidate.substring(0, 40)}...`);
+                    sendIceCandidate(event.candidate);
+                } else {
+                    log('🧊 ICE 候选收集完成');
+                }
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                log(`🌐 ICE 状态: ${pc.iceConnectionState}`);
+                if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+                    setStatus('连接断开');
+                }
+            };
+
+            // 如果我们是 offer 方，创建数据通道
+            if (isOfferer) {
+                const channel = pc.createDataChannel('chat');
+                setupDataChannel(channel);
+            } else {
+                pc.ondatachannel = (event) => {
+                    setupDataChannel(event.channel);
+                };
+            }
+            return pc;
+        }
+
+        // ---------- 发送 ICE 候选 ----------
+        function sendIceCandidate(candidate) {
+            if (currentMode === 'mqtt' && mqttClient && roomName) {
+                mqttClient.publish(`/room/${roomName}`, JSON.stringify({
+                    type: 'candidate',
+                    candidate: candidate,
+                    from: myClientId
+                }));
+            } else if (currentMode === 'discovery' && mqttClient && discoveryPaired) {
+                mqttClient.publish('/webconnect/discovery', JSON.stringify({
+                    type: 'candidate',
+                    candidate: candidate,
+                    from: discoveryId
+                }));
+            }
+        }
+
+        // ---------- MQTT 连接 ----------
+        function connectMqtt() {
+            return new Promise((resolve, reject) => {
+                if (mqttClient && mqttClient.connected) return resolve(mqttClient);
+                const brokerUrl = location.protocol === 'https:' 
+                    ? 'wss://broker.emqx.io:8084/mqtt' 
+                    : 'ws://broker.emqx.io:8083/mqtt';
+                myClientId = 'webrtc_' + Math.random().toString(16).substring(2, 10);
+                log(`🔌 连接 MQTT: ${brokerUrl} (ID: ${myClientId})`);
+                const client = mqtt.connect(brokerUrl, {
+                    clientId: myClientId,
+                    keepalive: 30
+                });
+                client.on('connect', () => {
+                    log('✅ MQTT 已连接');
+                    mqttClient = client;
+                    resolve(client);
+                });
+                client.on('error', (err) => {
+                    log(`❌ MQTT 错误: ${err.message}`);
+                    reject(err);
+                });
+                client.on('message', (topic, payload) => {
+                    handleMqttMessage(topic, payload.toString());
+                });
+                client.on('close', () => log('⚠️ MQTT 连接关闭'));
+            });
+        }
+
+        function handleMqttMessage(topic, payload) {
+            try {
+                const msg = JSON.parse(payload);
+
+                // 忽略自己发送的消息（仅对 MQTT 房间模式有效）
+                if (currentMode === 'mqtt' && msg.from === myClientId) {
+                    return;
+                }
+
+                if (currentMode === 'mqtt' && topic === `/room/${roomName}`) {
+                    if (msg.type === 'offer') {
+                        log('📥 收到 Offer');
+                        handleRemoteOffer(msg.sdp);
+                    } else if (msg.type === 'answer') {
+                        log('📥 收到 Answer');
+                        handleRemoteAnswer(msg.sdp);
+                    } else if (msg.type === 'candidate') {
+                        addIceCandidate(msg.candidate);
+                    }
+                } else if (currentMode === 'discovery' && topic === '/webconnect/discovery') {
+                    if (msg.from === discoveryId) return;
+                    
+                    if (msg.type === 'hello' && msg.id !== discoveryId && !discoveryPaired) {
+                        const otherId = msg.id;
+                        log(`🔍 发现设备: ${otherId}`);
+                        if (discoveryId < otherId) {
+                            isOfferer = true;
+                            log('🎯 我负责发起 Offer');
+                            startDiscoveryOffer(otherId);
+                        } else {
+                            isOfferer = false;
+                            log('⏳ 等待对方发起 Offer');
+                        }
+                        discoveryPaired = true;
+                    } else if (msg.type === 'offer' && !isOfferer) {
+                        log('📥 收到发现 Offer');
+                        handleRemoteOffer(msg.sdp);
+                    } else if (msg.type === 'answer' && isOfferer) {
+                        log('📥 收到发现 Answer');
+                        handleRemoteAnswer(msg.sdp);
+                    } else if (msg.type === 'candidate') {
+                        addIceCandidate(msg.candidate);
+                    }
+                }
+            } catch (e) {
+                log(`⚠️ 消息解析失败: ${e.message}`);
+            }
+        }
+
+        function addIceCandidate(candidate) {
+            if (!pc) {
+                pendingIceCandidates.push(candidate);
+                return;
+            }
+            if (!pc.remoteDescription) {
+                pendingIceCandidates.push(candidate);
+                return;
+            }
+            pc.addIceCandidate(new RTCIceCandidate(candidate))
+                .then(() => log('✅ 远程 ICE 候选添加成功'))
+                .catch(e => log(`❌ 添加 ICE 候选失败: ${e.message}`));
+        }
+
+        // ---------- WebRTC 信令处理 ----------
+        async function handleRemoteOffer(sdp) {
+            if (!pc) {
+                log('⛔ 无 PeerConnection，无法处理 Offer');
+                return;
+            }
+            if (pc.signalingState !== 'stable') {
+                log(`⛔ 信令状态异常 (${pc.signalingState})，无法处理 Offer`);
+                return;
+            }
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                log('📝 远程 Offer 已设置');
+                flushPendingIceCandidates();
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                log('📤 生成 Answer');
+                sendLocalDescription(answer);
+            } catch (e) {
+                log(`❌ 处理 Offer 失败: ${e.message}`);
+            }
+        }
+
+        async function handleRemoteAnswer(sdp) {
+            if (!pc) {
+                log('⛔ 无 PeerConnection，无法处理 Answer');
+                return;
+            }
+            if (pc.signalingState !== 'have-local-offer') {
+                log(`⛔ 信令状态异常 (${pc.signalingState})，无法处理 Answer`);
+                return;
+            }
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+                log('📝 远程 Answer 已设置');
+                flushPendingIceCandidates();
+            } catch (e) {
+                log(`❌ 处理 Answer 失败: ${e.message}`);
+            }
+        }
+
+        function sendLocalDescription(desc) {
+            if (currentMode === 'mqtt' && mqttClient && roomName) {
+                mqttClient.publish(`/room/${roomName}`, JSON.stringify({
+                    type: desc.type,
+                    sdp: desc,
+                    from: myClientId
+                }));
+            } else if (currentMode === 'discovery' && mqttClient && discoveryPaired) {
+                mqttClient.publish('/webconnect/discovery', JSON.stringify({
+                    type: desc.type,
+                    sdp: desc,
+                    from: discoveryId
+                }));
+            }
+        }
+
+        // ---------- 模式 1: MQTT 房间 ----------
+        async function createMqttRoom() {
+            const input = $('#roomInput');
+            if (!input) {
+                log('❌ 房间输入框未找到，请刷新页面');
+                return;
+            }
+            roomName = input.value.trim();
+            if (!roomName) return log('❌ 请输入房间名');
+            try {
+                await connectMqtt();
+                // 先订阅，再创建 PeerConnection 和发送 Offer
+                mqttClient.subscribe(`/room/${roomName}`, (err) => {
+                    if (err) {
+                        log(`❌ 订阅失败: ${err.message}`);
+                        return;
+                    }
+                    log(`📡 已创建房间: ${roomName}`);
+                    isOfferer = true;
+                    createPeerConnection();
+                    startOffer();
+                });
+            } catch (e) {
+                log(`❌ MQTT 连接失败: ${e.message}`);
+            }
+        }
+
+        async function joinMqttRoom() {
+            const input = $('#roomInput');
+            if (!input) {
+                log('❌ 房间输入框未找到，请刷新页面');
+                return;
+            }
+            roomName = input.value.trim();
+            if (!roomName) return log('❌ 请输入房间名');
+            try {
+                await connectMqtt();
+                // 先创建 PC（answer 方），再订阅
+                isOfferer = false;
+                createPeerConnection();
+                mqttClient.subscribe(`/room/${roomName}`, (err) => {
+                    if (err) {
+                        log(`❌ 订阅失败: ${err.message}`);
+                        return;
+                    }
+                    log(`📡 已加入房间: ${roomName}，等待 Offer...`);
+                });
+            } catch (e) {
+                log(`❌ MQTT 连接失败: ${e.message}`);
+            }
+        }
+
+        async function startOffer() {
+            if (!pc) {
+                log('❌ PeerConnection 未创建');
+                return;
+            }
+            try {
+                const offer = await pc.createOffer();
+                await pc.setLocalDescription(offer);
+                log('📤 发送 Offer');
+                sendLocalDescription(offer);
+            } catch (e) {
+                log(`❌ 创建 Offer 失败: ${e.message}`);
+            }
+        }
+
+        // ---------- 模式 2: 二维码 / 粘贴 ----------
+        let qrOfferSdp = null;
+        let qrAnswerSdp = null;
+
+        async function generateQrOffer() {
+            isOfferer = true;
+            const peer = createPeerConnection();
+            const offer = await peer.createOffer();
+            await peer.setLocalDescription(offer);
+            log('⏳ 收集 ICE 候选...');
+            await new Promise((resolve) => {
+                if (peer.iceGatheringState === 'complete') resolve();
+                else {
+                    peer.onicegatheringstatechange = () => {
+                        if (peer.iceGatheringState === 'complete') resolve();
+                    };
+                }
+            });
+            const fullSdp = peer.localDescription;
+            qrOfferSdp = JSON.stringify(fullSdp);
+            log('📤 Offer 已生成（含完整 ICE）');
+            renderQrOffer(fullSdp);
+        }
+
+        function renderQrOffer(desc) {
+            const container = $('#qrOfferContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            const sdpStr = JSON.stringify(desc);
+            const canvas = document.createElement('canvas');
+            QRCode.toCanvas(canvas, sdpStr, { width: 200, margin: 1 }, (err) => {
+                if (err) log('❌ 二维码生成失败');
+            });
+            canvas.style.borderRadius = '8px';
+            container.appendChild(canvas);
+            const textarea = document.createElement('textarea');
+            textarea.value = sdpStr;
+            textarea.rows = 4;
+            textarea.readOnly = true;
+            textarea.style.width = '100%';
+            textarea.style.marginTop = '0.5rem';
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = '复制 SDP';
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(sdpStr).then(() => log('📋 SDP 已复制'));
+            };
+            container.appendChild(textarea);
+            container.appendChild(copyBtn);
+            const qrOfferArea = $('#qrOfferArea');
+            if (qrOfferArea) qrOfferArea.classList.remove('hidden');
+        }
+
+        function processRemoteOfferSdp(sdpStr) {
+            if (!sdpStr) return;
+            try {
+                const desc = JSON.parse(sdpStr);
+                if (desc.type !== 'offer') throw new Error('不是有效的 Offer');
+                log('📥 粘贴 Offer 成功');
+                isOfferer = false;
+                createPeerConnection();
+                handleRemoteOffer(desc).then(() => {
+                    const checkAndRender = () => {
+                        if (pc && pc.iceGatheringState === 'complete') {
+                            const answer = pc.localDescription;
+                            qrAnswerSdp = JSON.stringify(answer);
+                            log('📤 Answer 已生成');
+                            renderQrAnswer(answer);
+                        }
+                    };
+                    if (pc) {
+                        pc.onicegatheringstatechange = checkAndRender;
+                        checkAndRender();
+                    }
+                });
+            } catch (e) {
+                log(`❌ SDP 解析失败: ${e.message}`);
+            }
+        }
+
+        function renderQrAnswer(desc) {
+            const container = $('#qrAnswerContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            const sdpStr = JSON.stringify(desc);
+            const canvas = document.createElement('canvas');
+            QRCode.toCanvas(canvas, sdpStr, { width: 200, margin: 1 }, (err) => {
+                if (err) log('❌ 二维码生成失败');
+            });
+            canvas.style.borderRadius = '8px';
+            container.appendChild(canvas);
+            const textarea = document.createElement('textarea');
+            textarea.value = sdpStr;
+            textarea.rows = 4;
+            textarea.readOnly = true;
+            textarea.style.width = '100%';
+            textarea.style.marginTop = '0.5rem';
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = '复制 SDP';
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(sdpStr).then(() => log('📋 Answer SDP 已复制'));
+            };
+            container.appendChild(textarea);
+            container.appendChild(copyBtn);
+            const qrAnswerArea = $('#qrAnswerArea');
+            if (qrAnswerArea) qrAnswerArea.classList.remove('hidden');
+        }
+
+        function pasteAnswerSdp() {
+            const sdpStr = $('#answerPasteInput')?.value?.trim();
+            if (!sdpStr) return log('❌ 请粘贴 Answer SDP');
+            try {
+                const desc = JSON.parse(sdpStr);
+                if (desc.type !== 'answer') throw new Error('不是有效的 Answer');
+                log('📥 粘贴 Answer 成功');
+                handleRemoteAnswer(desc);
+            } catch (e) {
+                log(`❌ Answer 解析失败: ${e.message}`);
+            }
+        }
+
+        // 摄像头扫描二维码
+        async function startQrScan() {
+            if (qrScanning) return;
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                qrStream = stream;
+                const video = $('#qrVideo');
+                if (!video) return;
+                video.srcObject = stream;
+                video.play();
+                qrScanning = true;
+                log('📷 摄像头已启动，等待二维码...');
+                scanLoop();
+            } catch (e) {
+                log(`❌ 摄像头启动失败: ${e.message}，请使用粘贴方式`);
+            }
+        }
+
+        function stopQrScan() {
+            if (qrStream) {
+                qrStream.getTracks().forEach(t => t.stop());
+                qrStream = null;
+            }
+            qrScanning = false;
+            const video = $('#qrVideo');
+            if (video) video.srcObject = null;
+        }
+
+        function scanLoop() {
+            if (!qrScanning) return;
+            const video = $('#qrVideo');
+            const canvas = $('#qrCanvas');
+            if (!video || !canvas) return;
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const code = jsQR(imageData.data, imageData.width, imageData.height);
+                if (code) {
+                    log('📱 扫描到二维码');
+                    stopQrScan();
+                    processRemoteOfferSdp(code.data);
+                    return;
+                }
+            }
+            requestAnimationFrame(scanLoop);
+        }
+
+        // ---------- 模式 3: 自动发现 ----------
+        async function startDiscovery() {
+            discoveryId = Math.random().toString(36).substring(2, 8);
+            log(`🆔 我的发现 ID: ${discoveryId}`);
+            try {
+                await connectMqtt();
+                mqttClient.subscribe('/webconnect/discovery', (err) => {
+                    if (err) return log(`❌ 订阅发现主题失败: ${err.message}`);
+                    log('🔍 已加入发现频道');
+                    // 发布自己的存在
+                    mqttClient.publish('/webconnect/discovery', JSON.stringify({
+                        type: 'hello',
+                        id: discoveryId
+                    }));
+                    log('📢 已广播存在');
+                    discoveryPaired = false;
+                    // 定期广播
+                    const helloInterval = setInterval(() => {
+                        if (discoveryPaired || !mqttClient || !mqttClient.connected) {
+                            clearInterval(helloInterval);
+                            return;
+                        }
+                        mqttClient.publish('/webconnect/discovery', JSON.stringify({
+                            type: 'hello',
+                            id: discoveryId
+                        }));
+                    }, 2000);
+                });
+            } catch (e) {
+                log(`❌ 发现启动失败: ${e.message}`);
+            }
+        }
+
+        async function startDiscoveryOffer(targetId) {
+            if (pc) {
+                pc.close();
+                pc = null;
+            }
+            isOfferer = true;
+            const peer = createPeerConnection();
+            try {
+                const offer = await peer.createOffer();
+                await peer.setLocalDescription(offer);
+                log('📤 发送发现 Offer');
+                mqttClient.publish('/webconnect/discovery', JSON.stringify({
+                    type: 'offer',
+                    sdp: offer,
+                    from: discoveryId,
+                    to: targetId
+                }));
+            } catch (e) {
+                log(`❌ 发起 Offer 失败: ${e.message}`);
+            }
+        }
+
+        // ---------- 界面渲染 ----------
+        function renderControlPanel() {
+            const panel = $('#controlPanel');
+            if (!panel) return;
+            if (currentMode === 'mqtt') {
+                panel.innerHTML = `
+                    <div class="control-row">
+                        <input type="text" id="roomInput" placeholder="输入房间名" />
+                        <button onclick="createMqttRoom()">创建房间</button>
+                        <button onclick="joinMqttRoom()">加入房间</button>
+                    </div>
+                    <p style="font-size:0.85rem; color:var(--muted); margin-top:0.5rem;">
+                        💡 一方点击"创建房间"，另一方在另一设备/标签页点击"加入房间"
+                    </p>
+                `;
+            } else if (currentMode === 'qrcode') {
+                panel.innerHTML = `
+                    <div style="display:flex; gap:1rem; flex-wrap:wrap;">
+                        <div style="flex:1; min-width:250px;">
+                            <strong>📤 发送 Offer</strong>
+                            <button onclick="generateQrOffer()" style="margin:0.5rem 0;">生成 Offer</button>
+                            <div id="qrOfferArea" class="hidden">
+                                <div id="qrOfferContainer"></div>
+                            </div>
+                        </div>
+                        <div style="flex:1; min-width:250px;">
+                            <strong>📥 接收 Offer</strong>
+                            <button onclick="startQrScan()">扫描二维码</button>
+                            <video id="qrVideo" class="qr-video" autoplay playsinline></video>
+                            <canvas id="qrCanvas"></canvas>
+                            <textarea id="offerPasteInput" placeholder="或粘贴 Offer SDP" rows="3" style="width:100%; margin-top:0.5rem;"></textarea>
+                            <button onclick="processRemoteOfferSdp($('#offerPasteInput').value)">使用粘贴的 Offer</button>
+                        </div>
+                    </div>
+                    <div style="margin-top:1rem;">
+                        <strong>🔄 回应 Answer</strong>
+                        <div id="qrAnswerArea" class="hidden">
+                            <div id="qrAnswerContainer"></div>
+                        </div>
+                        <textarea id="answerPasteInput" placeholder="粘贴 Answer SDP" rows="3" style="width:100%; margin-top:0.5rem;"></textarea>
+                        <button onclick="pasteAnswerSdp()">提交 Answer</button>
+                    </div>
+                `;
+            } else if (currentMode === 'discovery') {
+                panel.innerHTML = `
+                    <div class="control-row">
+                        <button onclick="startDiscovery()">🔍 启动发现</button>
+                        <span style="color:var(--muted);">双方都点击后，会自动配对连接</span>
+                    </div>
+                `;
+            }
+        }
+
+        // 模式切换
+        document.getElementById('modeSwitch').addEventListener('click', (e) => {
+            const btn = e.target.closest('.mode-btn');
+            if (!btn) return;
+            const mode = btn.dataset.mode;
+            if (mode === currentMode) return;
+            resetAll();
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const desc = {
+                mqtt: '使用公共 MQTT 服务器交换信令，输入相同房间号即可连接。',
+                qrcode: '完全离线：通过二维码或复制粘贴交换 SDP，适合近距离配对。',
+                discovery: '通过公共 MQTT 主题自动发现对方，无需房间号。'
+            };
+            $('#modeDesc').textContent = desc[mode];
+            renderControlPanel();
+            log(`🔄 切换到模式: ${btn.textContent.trim()}`);
+        });
+
+        // 发送消息
+        window.sendMessage = function() {
+            const input = $('#messageInput');
+            if (!input) return;
+            const text = input.value.trim();
+            if (!text || !dc || dc.readyState !== 'open') return;
+            dc.send(text);
+            appendMessage(text, '我');
+            log(`📤 发送: ${text}`);
+            input.value = '';
+        };
+
+        // 绑定回车发送
+        const msgInput = $('#messageInput');
+        if (msgInput) {
+            msgInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+        }
+
+        // 暴露必要函数到全局
+        window.createMqttRoom = createMqttRoom;
+        window.joinMqttRoom = joinMqttRoom;
+        window.generateQrOffer = generateQrOffer;
+        window.startQrScan = startQrScan;
+        window.processRemoteOfferSdp = (sdp) => processRemoteOfferSdp(sdp);
+        window.pasteAnswerSdp = pasteAnswerSdp;
+        window.startDiscovery = startDiscovery;
+
+        // 初始渲染
+        renderControlPanel();
+        log('🚀 Demo 已就绪');
+    })();
+</script>
+</body>
+</html>

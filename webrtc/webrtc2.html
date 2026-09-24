@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>纯前端远程协作 · 无后端演示 (修复版)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #f5f7fb;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      padding: 2rem 1.5rem;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .app {
+      max-width: 1300px;
+      width: 100%;
+      background: white;
+      border-radius: 32px;
+      box-shadow: 0 20px 40px -12px rgba(0,0,0,0.15);
+      padding: 2rem 1.8rem;
+    }
+    h1 {
+      margin-top: 0;
+      font-weight: 600;
+      font-size: 2rem;
+      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: #0b1b33;
+    }
+    .subhead {
+      color: #3b4a62;
+      margin-bottom: 2rem;
+      border-left: 4px solid #3b82f6;
+      padding-left: 1rem;
+      font-weight: 400;
+      background: #f0f4fe;
+      border-radius: 0 12px 12px 0;
+      line-height: 1.5;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.8rem;
+      margin-top: 1rem;
+    }
+    .card {
+      background: #ffffff;
+      border-radius: 24px;
+      border: 1px solid #e9edf4;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.02);
+      padding: 1.6rem 1.4rem 1.8rem;
+      transition: 0.2s;
+      display: flex;
+      flex-direction: column;
+    }
+    .card:hover { border-color: #cbd5e1; }
+    .card h2 {
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin-top: 0;
+      margin-bottom: 0.25rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card .badge {
+      font-size: 0.7rem;
+      background: #dbeafe;
+      color: #1e4a8b;
+      padding: 0.2rem 0.7rem;
+      border-radius: 20px;
+      font-weight: 500;
+      margin-left: 0.4rem;
+    }
+    .desc {
+      color: #2c3e50;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin: 0.5rem 0 1.2rem 0;
+      flex: 1;
+    }
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 0.5rem 0 1.2rem 0;
+    }
+    .btn {
+      background: white;
+      border: 1px solid #d0d8e6;
+      padding: 0.5rem 1rem;
+      border-radius: 40px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: #1e293b;
+      cursor: pointer;
+      transition: 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #fafcff;
+    }
+    .btn-primary {
+      background: #1e3a8a;
+      border: 1px solid #1e3a8a;
+      color: white;
+    }
+    .btn-primary:hover { background: #254a9e; }
+    .btn-success {
+      background: #0b6e4f;
+      border: 1px solid #0b6e4f;
+      color: white;
+    }
+    .btn-success:hover { background: #0f815d; }
+    .btn-outline { background: transparent; }
+    .btn-outline:hover { background: #f1f5f9; }
+    .btn:disabled { opacity: 0.4; pointer-events: none; }
+    .log-box {
+      background: #f1f5f9;
+      border-radius: 16px;
+      padding: 0.8rem 1rem;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      color: #0b1a2f;
+      min-height: 90px;
+      max-height: 160px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid #e2e8f0;
+      margin-top: 0.5rem;
+    }
+    .log-box .info { color: #075985; }
+    .log-box .warn { color: #b45309; }
+    .log-box .ok { color: #0b6e4f; }
+    .log-box .error { color: #b91c1c; }
+    .flex-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px;
+    }
+    .qrcode-area {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0.8rem 0 0.2rem;
+    }
+    .qrcode-area canvas {
+      border-radius: 12px;
+      background: white;
+      padding: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+      border: 1px solid #e2e8f0;
+    }
+    hr { border: none; border-top: 1px solid #e9edf4; margin: 1.2rem 0; }
+    .status-tip {
+      font-size: 0.8rem;
+      color: #3b4a62;
+      background: #f8fafc;
+      padding: 0.2rem 0.8rem;
+      border-radius: 30px;
+      display: inline-block;
+    }
+    .footer { margin-top: 2rem; color: #6b7a93; font-size: 0.85rem; text-align: center; }
+    @media (max-width: 640px) {
+      .app { padding: 1.2rem; }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+  <h1>🧪 远程协作 · 无后端 Demo (修复版)</h1>
+  <div class="subhead">
+    ⚡ 基于 WebRTC · 无需自建信令服务器 · 修复 UPeer 加载问题
+  </div>
+
+  <div class="grid-3">
+    <!-- 卡片1: 手动信令 (替代uPeerJS) 使用 simple-peer + 手动复制 -->
+    <div class="card">
+      <h2>📡 手动信令 <span class="badge">simple-peer</span></h2>
+      <div class="desc">
+        使用 simple-peer 库，通过手动复制/粘贴信令 (SDP) 完成交换。完全无后端，适合调试。
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="spOfferBtn">📤 生成 Offer (发起方)</button>
+        <button class="btn btn-success" id="spAnswerBtn">📥 生成 Answer (接收方)</button>
+        <button class="btn btn-outline" id="spConnectBtn" disabled>🔗 应用远端信令</button>
+        <button class="btn btn-outline" id="spSendBtn" disabled>💬 发送消息</button>
+      </div>
+      <div class="flex-row">
+        <span class="status-tip" id="spStatus">⏳ 未连接</span>
+      </div>
+      <div class="log-box" id="spLog">等待操作…</div>
+      <div style="margin-top:8px; font-size:0.75rem; color:#4b5a72;">
+        💡 发起方生成 Offer 后，复制信令给接收方；接收方生成 Answer 后复制回发起方，再点击“应用远端信令”。
+      </div>
+    </div>
+
+    <!-- 卡片2: QWBP (二维码信令) -->
+    <div class="card">
+      <h2>📱 QWBP <span class="badge">二维码信令</span></h2>
+      <div class="desc">
+        将信令压缩至二维码，扫码即可交换。纯物理方式，适合近距离无网协作。
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="qrbpOfferBtn">📷 生成 Offer (发起方)</button>
+        <button class="btn btn-success" id="qrbpAnswerBtn">✅ 生成 Answer (接收方)</button>
+        <button class="btn btn-outline" id="qrbpConnectBtn" disabled>🔗 建立连接</button>
+      </div>
+      <div class="qrcode-area" id="qrcodeContainer">
+        <canvas id="qrcodeCanvas" width="140" height="140" style="width:140px;height:140px;"></canvas>
+        <span style="font-size:0.7rem; color:#3b4a62; margin-top:4px;">二维码信令 (扫码交换)</span>
+      </div>
+      <div class="flex-row">
+        <span class="status-tip" id="qrbpStatus">⏳ 等待生成</span>
+      </div>
+      <div class="log-box" id="qrbpLog">扫码或手动输入信令…</div>
+    </div>
+
+    <!-- 卡片3: 简易 webconnect (模拟 Torrent/MQTT 发现) -->
+    <div class="card">
+      <h2>🧬 webconnect <span class="badge">模拟发现</span></h2>
+      <div class="desc">
+        利用 simple-peer 模拟通过公共协议自动发现。展示无后端信令交换概念。
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="wcStartBtn">🌐 启动发现 (发起方)</button>
+        <button class="btn btn-success" id="wcJoinBtn">📡 加入发现 (接收方)</button>
+        <button class="btn btn-outline" id="wcSendBtn" disabled>💬 发送测试</button>
+      </div>
+      <div class="flex-row">
+        <span class="status-tip" id="wcStatus">⏳ 未启动</span>
+        <span style="font-size:0.75rem; color:#5a6e8a;" id="wcPeerId">ID: —</span>
+      </div>
+      <div class="log-box" id="wcLog">准备就绪…</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    ⚡ 纯前端演示 · 所有信令交换均通过手动/二维码 · 无需部署后端
+  </div>
+</div>
+
+<!-- 引入第三方库 (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+<script>
+  (function() {
+    'use strict';
+
+    // ----- 工具: 日志辅助 -----
+    function log(element, msg, type = 'info') {
+      const prefix = type === 'error' ? '❌ ' : type === 'ok' ? '✅ ' : type === 'warn' ? '⚠️ ' : 'ℹ️ ';
+      const cls = type === 'error' ? 'error' : type === 'ok' ? 'ok' : type === 'warn' ? 'warn' : 'info';
+      element.innerHTML += `<span class="${cls}">${prefix}${msg}</span>\n`;
+      element.scrollTop = element.scrollHeight;
+    }
+    function clearLog(element) { element.innerHTML = ''; }
+
+    // ========== 1. simple-peer 手动信令 (替代 uPeerJS) ==========
+    (function simplePeerDemo() {
+      const logEl = document.getElementById('spLog');
+      const statusEl = document.getElementById('spStatus');
+      const offerBtn = document.getElementById('spOfferBtn');
+      const answerBtn = document.getElementById('spAnswerBtn');
+      const connectBtn = document.getElementById('spConnectBtn');
+      const sendBtn = document.getElementById('spSendBtn');
+
+      let peer = null;
+      let isInitiator = false;
+      let offerSignal = null;   // 存储发起方 signal
+      let answerSignal = null;  // 存储接收方 signal
+
+      function updateStatus(text) { statusEl.textContent = text; }
+
+      function cleanupSP() {
+        if (peer) {
+          try { peer.destroy(); } catch(e) {}
+          peer = null;
+        }
+        offerSignal = null;
+        answerSignal = null;
+        sendBtn.disabled = true;
+        connectBtn.disabled = true;
+        updateStatus('⏳ 未连接');
+      }
+
+      function createSPPeer(initiator) {
+        cleanupSP();
+        clearLog(logEl);
+        const p = new SimplePeer({
+          initiator: initiator,
+          trickle: true,
+          config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+        });
+
+        p.on('signal', data => {
+          const signalStr = JSON.stringify(data);
+          if (initiator) {
+            offerSignal = data;
+            log(logEl, `📤 Offer 信令已生成 (复制此信令给接收方)`, 'ok');
+            log(logEl, `📋 信令: ${signalStr.substring(0, 120)}...`, 'info');
+            updateStatus('📤 Offer 已生成，等待 Answer');
+            connectBtn.disabled = false;
+            connectBtn.textContent = '📥 应用 Answer';
+          } else {
+            answerSignal = data;
+            log(logEl, `📥 Answer 信令已生成 (复制此信令给发起方)`, 'ok');
+            log(logEl, `📋 信令: ${signalStr.substring(0, 120)}...`, 'info');
+            updateStatus('📥 Answer 已生成，等待 Offer');
+            connectBtn.disabled = false;
+            connectBtn.textContent = '📤 应用 Offer';
+          }
+        });
+
+        p.on('connect', () => {
+          log(logEl, '🔗 对等连接已建立!', 'ok');
+          updateStatus('✅ 已连接');
+          sendBtn.disabled = false;
+          p.send('Hello from simple-peer!');
+        });
+
+        p.on('data', data => {
+          log(logEl, `📩 收到消息: ${data}`, 'info');
+        });
+
+        p.on('error', err => {
+          log(logEl, `错误: ${err.message}`, 'error');
+          updateStatus('❌ 错误');
+        });
+
+        p.on('close', () => {
+          log(logEl, '连接已关闭', 'warn');
+          updateStatus('⏳ 已断开');
+          sendBtn.disabled = true;
+          connectBtn.disabled = true;
+        });
+
+        peer = p;
+        isInitiator = initiator;
+        return p;
+      }
+
+      offerBtn.addEventListener('click', () => {
+        createSPPeer(true);
+      });
+
+      answerBtn.addEventListener('click', () => {
+        createSPPeer(false);
+      });
+
+      connectBtn.addEventListener('click', () => {
+        if (!peer) {
+          log(logEl, '请先生成 Offer 或 Answer', 'warn');
+          return;
+        }
+        try {
+          if (isInitiator) {
+            // 发起方: 需要应用 Answer
+            if (!answerSignal) {
+              // 尝试从输入框或剪贴板获取 (简化: 提示)
+              const userInput = prompt('请粘贴接收方 (Answer) 的信令 JSON 字符串:');
+              if (userInput) {
+                try {
+                  answerSignal = JSON.parse(userInput);
+                } catch(e) {
+                  log(logEl, '信令格式错误，请重新粘贴', 'error');
+                  return;
+                }
+              } else {
+                log(logEl, '未提供 Answer 信令', 'warn');
+                return;
+              }
+            }
+            peer.signal(answerSignal);
+            log(logEl, '✅ 已应用 Answer 信令', 'ok');
+            connectBtn.disabled = true;
+          } else {
+            // 接收方: 需要应用 Offer
+            if (!offerSignal) {
+              const userInput = prompt('请粘贴发起方 (Offer) 的信令 JSON 字符串:');
+              if (userInput) {
+                try {
+                  offerSignal = JSON.parse(userInput);
+                } catch(e) {
+                  log(logEl, '信令格式错误，请重新粘贴', 'error');
+                  return;
+                }
+              } else {
+                log(logEl, '未提供 Offer 信令', 'warn');
+                return;
+              }
+            }
+            peer.signal(offerSignal);
+            log(logEl, '✅ 已应用 Offer 信令', 'ok');
+            connectBtn.disabled = true;
+          }
+        } catch(e) {
+          log(logEl, '应用信令失败: ' + e.message, 'error');
+        }
+      });
+
+      sendBtn.addEventListener('click', () => {
+        if (peer) {
+          const msg = '📨 Ping @ ' + new Date().toLocaleTimeString();
+          peer.send(msg);
+          log(logEl, `📤 发送: ${msg}`, 'ok');
+        } else {
+          log(logEl, '没有活动连接', 'warn');
+        }
+      });
+
+      cleanupSP();
+    })();
+
+    // ========== 2. QWBP (二维码信令) ==========
+    (function qrbpDemo() {
+      const logEl = document.getElementById('qrbpLog');
+      const statusEl = document.getElementById('qrbpStatus');
+      const offerBtn = document.getElementById('qrbpOfferBtn');
+      const answerBtn = document.getElementById('qrbpAnswerBtn');
+      const connectBtn = document.getElementById('qrbpConnectBtn');
+      const canvas = document.getElementById('qrcodeCanvas');
+      let qrCodeInstance = null;
+
+      let offerData = null;
+      let answerData = null;
+      let peerConnection = null;
+      let qrbpChannel = null;
+
+      function updateStatus(text) { statusEl.textContent = text; }
+
+      function clearQR() {
+        canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+        qrCodeInstance = null;
+      }
+
+      function generateQR(text) {
+        clearQR();
+        if (!text) return;
+        try {
+          qrCodeInstance = new QRCode(canvas, {
+            text: text,
+            width: 140,
+            height: 140,
+            colorDark: '#1e293b',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.H
+          });
+        } catch(e) {
+          log(logEl, 'QR 生成失败: ' + e.message, 'error');
+        }
+      }
+
+      function createQRPeerConnection(isOffer) {
+        if (peerConnection) {
+          try { peerConnection.close(); } catch(e) {}
+          peerConnection = null;
+          qrbpChannel = null;
+        }
+        const pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        const channel = pc.createDataChannel('qrbp-channel');
+        channel.onopen = () => {
+          log(logEl, '🔗 数据通道已打开!', 'ok');
+          updateStatus('✅ 已连接');
+          connectBtn.disabled = true;
+        };
+        channel.onmessage = (e) => {
+          log(logEl, `📩 收到: ${e.data}`, 'info');
+        };
+        pc.ondatachannel = (event) => {
+          const ch = event.channel;
+          ch.onopen = () => {
+            log(logEl, '🔗 数据通道已打开 (接收方)', 'ok');
+            updateStatus('✅ 已连接');
+            connectBtn.disabled = true;
+          };
+          ch.onmessage = (e) => {
+            log(logEl, `📩 收到: ${e.data}`, 'info');
+          };
+          qrbpChannel = ch;
+        };
+
+        pc.onicecandidate = (e) => {
+          if (e.candidate) {
+            log(logEl, `ICE 候选: ${e.candidate.candidate}`, 'info');
+          }
+        };
+        pc.onconnectionstatechange = () => {
+          if (pc.connectionState === 'connected') {
+            log(logEl, '🔗 RTCPeerConnection 已连接', 'ok');
+            updateStatus('✅ 已连接');
+            connectBtn.disabled = true;
+          } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+            log(logEl, '⚠️ 连接状态: ' + pc.connectionState, 'warn');
+            updateStatus('❌ 连接失败');
+          }
+        };
+        peerConnection = pc;
+        qrbpChannel = channel;
+        return pc;
+      }
+
+      offerBtn.addEventListener('click', async () => {
+        clearLog(logEl);
+        clearQR();
+        offerData = null;
+        answerData = null;
+        connectBtn.disabled = true;
+        updateStatus('📷 生成 Offer...');
+
+        try {
+          const pc = createQRPeerConnection(true);
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          const sdp = pc.localDescription.sdp;
+          const shortSdp = sdp.substring(0, 200) + '...' + (sdp.length % 100);
+          const qrText = 'QR-OFFER:' + btoa(shortSdp);
+          generateQR(qrText);
+          offerData = sdp;
+          log(logEl, '📷 Offer 已生成, 扫码或复制信令给接收方', 'ok');
+          updateStatus('📷 Offer 已生成, 等待 Answer');
+          connectBtn.disabled = false;
+          connectBtn.textContent = '🔗 使用 Answer 连接';
+        } catch(e) {
+          log(logEl, '生成 Offer 失败: ' + e.message, 'error');
+          updateStatus('❌ 失败');
+        }
+      });
+
+      answerBtn.addEventListener('click', async () => {
+        clearLog(logEl);
+        clearQR();
+        offerData = null;
+        answerData = null;
+        connectBtn.disabled = true;
+        updateStatus('📱 生成 Answer...');
+        try {
+          const pc = createQRPeerConnection(false);
+          // 先创建一个 fake offer 来生成 answer (演示)
+          const fakeOffer = await pc.createOffer();
+          await pc.setLocalDescription(fakeOffer);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          const sdp = pc.localDescription.sdp;
+          const shortSdp = sdp.substring(0, 200) + '...' + (sdp.length % 100);
+          const qrText = 'QR-ANSWER:' + btoa(shortSdp);
+          generateQR(qrText);
+          answerData = sdp;
+          log(logEl, '📱 Answer 已生成 (演示模式)', 'ok');
+          updateStatus('📱 Answer 已生成');
+          connectBtn.disabled = false;
+          connectBtn.textContent = '🔗 使用 Offer 连接';
+        } catch(e) {
+          log(logEl, '生成 Answer 失败: ' + e.message, 'error');
+          updateStatus('❌ 失败');
+        }
+      });
+
+      connectBtn.addEventListener('click', async () => {
+        if (!peerConnection) {
+          log(logEl, '请先生成 Offer 或 Answer', 'warn');
+          return;
+        }
+        try {
+          if (peerConnection.localDescription && peerConnection.localDescription.type === 'offer') {
+            if (!answerData) {
+              const input = prompt('请粘贴 Answer 信令 (SDP):');
+              if (input) answerData = input;
+              else return;
+            }
+            await peerConnection.setRemoteDescription({ type: 'answer', sdp: answerData });
+            log(logEl, '✅ 已设置远程 Answer', 'ok');
+            connectBtn.disabled = true;
+          } else if (peerConnection.localDescription && peerConnection.localDescription.type === 'answer') {
+            if (!offerData) {
+              const input = prompt('请粘贴 Offer 信令 (SDP):');
+              if (input) offerData = input;
+              else return;
+            }
+            await peerConnection.setRemoteDescription({ type: 'offer', sdp: offerData });
+            log(logEl, '✅ 已设置远程 Offer', 'ok');
+            connectBtn.disabled = true;
+          } else {
+            log(logEl, '未知状态, 请重新生成', 'error');
+          }
+        } catch(e) {
+          log(logEl, '连接失败: ' + e.message, 'error');
+        }
+      });
+
+      updateStatus('⏳ 等待生成');
+      connectBtn.disabled = true;
+    })();
+
+    // ========== 3. webconnect 模拟 (使用 simple-peer) ==========
+    (function webConnectDemo() {
+      const logEl = document.getElementById('wcLog');
+      const statusEl = document.getElementById('wcStatus');
+      const peerIdEl = document.getElementById('wcPeerId');
+      const startBtn = document.getElementById('wcStartBtn');
+      const joinBtn = document.getElementById('wcJoinBtn');
+      const sendBtn = document.getElementById('wcSendBtn');
+
+      let peer = null;
+
+      function updateStatus(text) { statusEl.textContent = text; }
+      function setPeerId(id) { peerIdEl.textContent = 'ID: ' + (id || '—'); }
+
+      function cleanupWC() {
+        if (peer) {
+          try { peer.destroy(); } catch(e) {}
+          peer = null;
+        }
+        sendBtn.disabled = true;
+        updateStatus('⏳ 未启动');
+        setPeerId(null);
+      }
+
+      function createWCPeer(initiator) {
+        cleanupWC();
+        clearLog(logEl);
+        const p = new SimplePeer({
+          initiator: initiator,
+          trickle: true,
+          config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }
+        });
+
+        p.on('signal', data => {
+          const signalStr = JSON.stringify(data);
+          log(logEl, `📡 信令 (${initiator ? '发起方' : '接收方'}): ${signalStr.substring(0, 80)}...`, 'info');
+          if (initiator) {
+            window._wcOfferSignal = data;
+            log(logEl, '💡 发起方信号已生成, 点击 "加入发现" 将自动读取', 'ok');
+          } else {
+            if (window._wcOfferSignal) {
+              p.signal(window._wcOfferSignal);
+              log(logEl, '📥 已自动应用发起方信号', 'ok');
+              delete window._wcOfferSignal;
+            } else {
+              log(logEl, '⚠️ 未找到发起方信号, 请先生成发起方', 'warn');
+            }
+          }
+        });
+
+        p.on('connect', () => {
+          log(logEl, '🔗 对等连接已建立!', 'ok');
+          updateStatus('✅ 已连接');
+          sendBtn.disabled = false;
+          p.send('Hello from webconnect!');
+        });
+
+        p.on('data', data => {
+          log(logEl, `📩 收到: ${data}`, 'info');
+        });
+
+        p.on('error', err => {
+          log(logEl, `错误: ${err.message}`, 'error');
+          updateStatus('❌ 错误');
+        });
+
+        p.on('close', () => {
+          log(logEl, '连接已关闭', 'warn');
+          updateStatus('⏳ 已断开');
+          sendBtn.disabled = true;
+        });
+
+        peer = p;
+        setPeerId('模拟ID-' + (initiator ? 'A' : 'B'));
+        return p;
+      }
+
+      startBtn.addEventListener('click', () => {
+        createWCPeer(true);
+        updateStatus('📡 发起方 (等待信号)');
+      });
+
+      joinBtn.addEventListener('click', () => {
+        createWCPeer(false);
+        updateStatus('📡 接收方 (等待连接)');
+      });
+
+      sendBtn.addEventListener('click', () => {
+        if (peer) {
+          const msg = '📨 Ping @ ' + new Date().toLocaleTimeString();
+          peer.send(msg);
+          log(logEl, `📤 发送: ${msg}`, 'ok');
+        } else {
+          log(logEl, '没有活动连接', 'warn');
+        }
+      });
+
+      cleanupWC();
+    })();
+
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerJS Demo</title>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --card: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --success: #10b981;
+            --radius: 12px;
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        .peer-id {
+            background: #f1f5f9;
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            word-break: break-all;
+            margin: 0.5rem 0;
+        }
+        .control-row {
+            display: flex;
+            gap: 0.5rem;
+            margin: 0.75rem 0;
+        }
+        input, button {
+            font-family: inherit;
+            font-size: 0.95rem;
+            border-radius: 8px;
+        }
+        input {
+            border: 1px solid var(--border);
+            padding: 0.6rem 0.75rem;
+            flex: 1;
+        }
+        button {
+            border: none;
+            background: var(--primary);
+            color: white;
+            padding: 0.6rem 1.2rem;
+            cursor: pointer;
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        button:hover { background: var(--primary-hover); }
+        button:disabled {
+            background: #94a3b8;
+            cursor: not-allowed;
+        }
+        button.secondary {
+            background: #f1f5f9;
+            color: #334155;
+            border: 1px solid var(--border);
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            background: #f1f5f9;
+            color: #475569;
+        }
+        .status-badge.connected {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .message-list {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.75rem;
+            height: 150px;
+            overflow-y: auto;
+            font-size: 0.95rem;
+        }
+        .message-list div {
+            padding: 0.3rem 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .message-list div:last-child {
+            border-bottom: none;
+        }
+        .highlight {
+            background: #fef3c7;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🔗 PeerJS 信令测试</h1>
+
+    <!-- 本机信息 -->
+    <div class="card">
+        <strong>🆔 我的 Peer ID：</strong>
+        <div class="peer-id" id="myPeerId">连接中...</div>
+        <span id="peerStatus" class="status-badge">未连接</span>
+        <p style="font-size:0.85rem; color:var(--muted); margin-top:0.5rem;">
+            把上面的 Peer ID 发给对方，让对方在下方输入后连接
+        </p>
+    </div>
+
+    <!-- 连接对方 -->
+    <div class="card">
+        <strong>🔗 连接对方</strong>
+        <div class="control-row">
+            <input type="text" id="remotePeerId" placeholder="输入对方的 Peer ID" />
+            <button id="connectBtn" onclick="connectToPeer()">连接</button>
+        </div>
+        <span id="connectionStatus" class="status-badge" style="margin-top:0.5rem;">等待连接</span>
+    </div>
+
+    <!-- 消息区 -->
+    <div class="card">
+        <strong>💬 消息</strong>
+        <div class="message-list" id="messageList">等待连接...</div>
+        <div class="control-row">
+            <input type="text" id="messageInput" placeholder="输入消息..." disabled />
+            <button id="sendBtn" disabled onclick="sendMessage()">发送</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ============ 对比你的原生代码 ============
+        // 你的代码：mqttClient = mqtt.connect(...)
+        //          mqttClient.subscribe('/room/xxx')
+        //          mqttClient.publish('/room/xxx', JSON.stringify({type:'offer',sdp:...}))
+        //
+        // PeerJS： 一行 peer = new Peer() 就搞定了上面所有
+        //          信令交换完全自动，无需手动处理 SDP/ICE
+
+        let conn = null; // PeerJS 的数据连接（相当于你的 DataChannel）
+        let currentPeerId = '';
+
+        // ============ 1. 创建 Peer（自动连接信令服务器） ============
+        // 对比你的代码：需要 connectMqtt() → subscribe → publish → handleOffer → handleAnswer → addIceCandidate
+        // PeerJS：全部自动处理！
+        const peer = new Peer({
+            // 使用 PeerJS 官方免费信令服务器（相当于你的公共 MQTT Broker）
+            // host: '0.peerjs.com',
+            // port: 443,
+            // secure: true,
+            
+            // 也可以自建服务器：peerjs --port 9000
+            // host: 'localhost',
+            // port: 9000,
+            // secure: false,
+        });
+
+        // Peer 连接到信令服务器成功
+        peer.on('open', (id) => {
+            currentPeerId = id;
+            document.getElementById('myPeerId').textContent = id;
+            document.getElementById('peerStatus').textContent = '已连接信令服务器';
+            document.getElementById('peerStatus').className = 'status-badge connected';
+            log('✅ PeerJS 已连接，ID: ' + id);
+        });
+
+        peer.on('error', (err) => {
+            log('❌ PeerJS 错误: ' + err.message);
+        });
+
+        // ============ 2. 被动接收连接（相当于你的 ondatachannel） ============
+        // 对比你的代码：需要手动创建 RTCPeerConnection → 等待 ondatachannel
+        // PeerJS：一个事件就搞定
+        peer.on('connection', (incomingConn) => {
+            log('📥 收到连接请求');
+            setupConnection(incomingConn);
+        });
+
+        // ============ 3. 主动连接对方 ============
+        window.connectToPeer = function() {
+            const remoteId = document.getElementById('remotePeerId').value.trim();
+            if (!remoteId) {
+                log('❌ 请输入对方的 Peer ID');
+                return;
+            }
+            if (remoteId === currentPeerId) {
+                log('❌ 不能连接自己');
+                return;
+            }
+            log('🔗 正在连接: ' + remoteId);
+            
+            // 对比你的代码：需要 createPeerConnection → createOffer → setLocalDescription → publish offer
+            //                → 等待 answer → setRemoteDescription → addIceCandidate...
+            // PeerJS：一行 connect() 全搞定！
+            const outgoingConn = peer.connect(remoteId, {
+                reliable: true  // 可靠传输（相当于你的 DataChannel 默认模式）
+            });
+            setupConnection(outgoingConn);
+        };
+
+        // ============ 4. 统一的连接处理（收发双方共用） ============
+        function setupConnection(c) {
+            conn = c;
+            
+            // 连接打开（相当于你的 dc.onopen）
+            conn.on('open', () => {
+                log('✅ 数据通道已打开（P2P 直连已建立）');
+                document.getElementById('connectionStatus').textContent = '已连接 (P2P)';
+                document.getElementById('connectionStatus').className = 'status-badge connected';
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('messageList').innerHTML = '';
+            });
+
+            // 收到消息（相当于你的 dc.onmessage）
+            conn.on('data', (data) => {
+                log('📩 收到: ' + data);
+                appendMessage(data, '对方');
+            });
+
+            // 连接关闭
+            conn.on('close', () => {
+                log('⚠️ 连接关闭');
+                document.getElementById('connectionStatus').textContent = '已断开';
+                document.getElementById('connectionStatus').className = 'status-badge';
+                document.getElementById('messageInput').disabled = true;
+                document.getElementById('sendBtn').disabled = true;
+                document.getElementById('connectBtn').disabled = false;
+            });
+
+            conn.on('error', (err) => {
+                log('❌ 连接错误: ' + err.message);
+            });
+        }
+
+        // ============ 5. 发送消息 ============
+        window.sendMessage = function() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text || !conn || !conn.open) return;
+            
+            // 对比你的代码：dc.send(text)
+            // PeerJS：conn.send(text) 几乎一样！
+            conn.send(text);
+            appendMessage(text, '我');
+            log('📤 发送: ' + text);
+            input.value = '';
+        };
+
+        // 工具函数
+        function log(msg) {
+            console.log(`[${new Date().toLocaleTimeString()}] ${msg}`);
+        }
+
+        function appendMessage(text, from) {
+            const list = document.getElementById('messageList');
+            const div = document.createElement('div');
+            div.innerHTML = `<span class="highlight">${from}:</span> ${text}`;
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+        }
+
+        // 回车发送
+        document.getElementById('messageInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        log('🚀 PeerJS Demo 已就绪');
+    })();
+</script>
+</body>
+</html>

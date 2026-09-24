@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PeerJS Mesh 群聊 (修复版)</title>
+    <script src="https://unpkg.com/peerjs@1.5.1/dist/peerjs.min.js"></script>
+    <style>
+        :root {
+            --bg: #f5f7fb;
+            --card: #ffffff;
+            --text: #1e293b;
+            --muted: #64748b;
+            --border: #e2e8f0;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --radius: 12px;
+            --shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 700px;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+        h1 { font-size: 1.6rem; font-weight: 600; }
+        .peer-id {
+            background: #f1f5f9;
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            word-break: break-all;
+        }
+        .control-row {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        input, button {
+            font-family: inherit;
+            font-size: 0.95rem;
+            border-radius: 8px;
+        }
+        input {
+            border: 1px solid var(--border);
+            padding: 0.6rem 0.75rem;
+            flex: 1;
+            min-width: 150px;
+        }
+        button {
+            border: none;
+            background: var(--primary);
+            color: white;
+            padding: 0.6rem 1rem;
+            cursor: pointer;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+        button:hover { background: var(--primary-hover); }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+        button.danger { background: #ef4444; }
+        button.danger:hover { background: #dc2626; }
+        .status-badge {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            background: #f1f5f9;
+            color: #475569;
+        }
+        .status-badge.online { background: #dcfce7; color: #166534; }
+        .members-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            min-height: 40px;
+            align-items: center;
+        }
+        .member-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: #eff6ff;
+            color: #1e40af;
+            padding: 0.3rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .member-tag.me { background: #dcfce7; color: #166534; }
+        .message-list {
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.75rem;
+            height: 200px;
+            overflow-y: auto;
+        }
+        .message-item {
+            padding: 0.35rem 0;
+            border-bottom: 1px solid #f1f5f9;
+            font-size: 0.9rem;
+        }
+        .message-item:last-child { border-bottom: none; }
+        .msg-sender {
+            font-weight: 600;
+            color: #6366f1;
+            margin-right: 0.3rem;
+        }
+        .msg-self .msg-sender { color: #10b981; }
+        .msg-system {
+            color: #94a3b8;
+            font-style: italic;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>👥 PeerJS Mesh 群聊 (完整 Mesh)</h1>
+
+    <div class="card">
+        <strong>🆔 我的 Peer ID：</strong>
+        <div class="peer-id" id="myPeerId">连接中...</div>
+        <p style="font-size:0.85rem; color:var(--muted); margin-top:0.5rem;">
+            💡 复制 Peer ID 发给别人，或输入别人的 ID 连接
+        </p>
+    </div>
+
+    <div class="card">
+        <strong>➕ 添加群成员</strong>
+        <div class="control-row" style="margin-top:0.5rem;">
+            <input type="text" id="remotePeerId" placeholder="输入对方的 Peer ID" />
+            <button onclick="addMember()">添加</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <strong>👥 在线成员（<span id="memberCount">1</span>人）</strong>
+        <div class="members-list" id="membersList">
+            <span class="member-tag me">🟢 我</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <strong>💬 群聊</strong>
+        <div class="message-list" id="messageList">
+            <div class="msg-system">📢 等待成员加入...</div>
+        </div>
+        <div class="control-row" style="margin-top:0.75rem;">
+            <input type="text" id="messageInput" placeholder="输入群聊消息..." disabled />
+            <button id="sendBtn" disabled onclick="sendGroupMessage()">发送</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    (function() {
+        // ============ 核心数据结构 ============
+        const connections = new Map();          // peerId → { conn, name }
+        const receivedMessages = new Set();
+        const MAX_CACHE_SIZE = 1000;
+        const knownPeers = new Set();           // 已知的所有群成员 ID（包括自己）
+        
+        let myPeerId = '';
+        let myName = '用户' + Math.floor(Math.random() * 1000);
+
+        const peer = new Peer();
+
+        // ============ PeerJS 初始化 ============
+        peer.on('open', (id) => {
+            myPeerId = id;
+            knownPeers.add(myPeerId);
+            document.getElementById('myPeerId').textContent = id;
+            updateMemberList();
+            logSystem('✅ 已上线，我的 ID: ' + id);
+        });
+
+        peer.on('error', (err) => {
+            logSystem('❌ 错误: ' + err.message);
+        });
+
+        // ============ 被动接收连接 ============
+        peer.on('connection', (incomingConn) => {
+            const remoteId = incomingConn.peer;
+            
+            if (connections.has(remoteId)) {
+                logSystem('⚠️ 重复连接，关闭旧连接: ' + remoteId);
+                connections.get(remoteId).conn.close();
+            }
+            
+            logSystem('📥 ' + remoteId + ' 请求加入');
+            setupConnection(incomingConn);
+            
+            // 【关键修复1】通知所有现有成员：有新成员加入了
+            broadcastNewMember(remoteId);
+        });
+
+        // ============ 主动添加成员 ============
+        window.addMember = function() {
+            const remoteId = document.getElementById('remotePeerId').value.trim();
+            if (!remoteId) {
+                logSystem('❌ 请输入 Peer ID');
+                return;
+            }
+            if (remoteId === myPeerId) {
+                logSystem('❌ 不能添加自己');
+                return;
+            }
+            if (connections.has(remoteId)) {
+                logSystem('⚠️ 已在群聊中');
+                return;
+            }
+
+            logSystem('🔗 正在添加: ' + remoteId);
+            const conn = peer.connect(remoteId, {
+                reliable: true,
+                metadata: { name: myName }
+            });
+            setupConnection(conn);
+            document.getElementById('remotePeerId').value = '';
+        };
+
+        // ============ 统一连接处理 ============
+        function setupConnection(conn) {
+            const remoteId = conn.peer;
+
+            conn.on('open', () => {
+                logSystem('✅ 与 ' + remoteId + ' 的连接已建立');
+                
+                // 【关键修复2】记录这个连接
+                connections.set(remoteId, {
+                    conn: conn,
+                    name: remoteId.substring(0, 8)
+                });
+                
+                // 【关键修复3】记录已知成员
+                knownPeers.add(remoteId);
+                
+                updateMemberList();
+                enableChat();
+                
+                // 【关键修复4】发送完整的已知成员列表
+                sendFullMemberList(conn);
+                
+                // 【关键修复5】通知我认识的所有人，有新成员加入
+                // 但排除新成员自己
+                broadcastNewMemberToExisting(remoteId);
+            });
+
+            // 接收消息
+            conn.on('data', (data) => {
+                handleIncomingData(remoteId, data);
+            });
+
+            conn.on('close', () => {
+                logSystem('👋 ' + remoteId + ' 离开');
+                connections.delete(remoteId);
+                knownPeers.delete(remoteId);
+                updateMemberList();
+                // 通知其他人
+                broadcastMemberLeft(remoteId);
+                if (connections.size === 0) disableChat();
+            });
+
+            conn.on('error', (err) => {
+                logSystem('❌ ' + remoteId + ' 连接错误: ' + err.message);
+                connections.delete(remoteId);
+                knownPeers.delete(remoteId);
+                updateMemberList();
+            });
+        }
+
+        // ============ 【核心修复】发送完整成员列表 ============
+        function sendFullMemberList(conn) {
+            // 发送我知道的所有成员（包括我自己）
+            const allMembers = Array.from(knownPeers);
+            conn.send({
+                type: 'full_member_list',
+                members: allMembers,
+                memberNames: getAllMemberNames(),
+                id: generateMessageId()
+            });
+            
+            // 也发送我自己的名字
+            conn.send({
+                type: 'name',
+                name: myName,
+                peerId: myPeerId,
+                id: generateMessageId()
+            });
+        }
+
+        function getAllMemberNames() {
+            const names = {};
+            names[myPeerId] = myName;
+            connections.forEach((info, peerId) => {
+                names[peerId] = info.name || peerId.substring(0, 8);
+            });
+            return names;
+        }
+
+        // ============ 【核心修复】广播新成员加入 ============
+        function broadcastNewMember(newPeerId) {
+            knownPeers.add(newPeerId);
+            
+            connections.forEach((info, peerId) => {
+                // 告诉每个现有成员（除了新成员自己）
+                if (peerId !== newPeerId && info.conn.open) {
+                    info.conn.send({
+                        type: 'member_joined',
+                        peerId: newPeerId,
+                        id: generateMessageId()
+                    });
+                }
+            });
+        }
+
+        // ============ 【核心修复】告诉现有成员连接新成员 ============
+        function broadcastNewMemberToExisting(newPeerId) {
+            connections.forEach((info, peerId) => {
+                // 让现有成员也去连接新成员
+                if (peerId !== newPeerId && info.conn.open) {
+                    info.conn.send({
+                        type: 'connect_to',
+                        peerId: newPeerId,
+                        id: generateMessageId()
+                    });
+                }
+            });
+        }
+
+        function broadcastMemberLeft(leftPeerId) {
+            knownPeers.delete(leftPeerId);
+            
+            connections.forEach((info, peerId) => {
+                if (info.conn.open) {
+                    info.conn.send({
+                        type: 'member_left',
+                        peerId: leftPeerId,
+                        id: generateMessageId()
+                    });
+                }
+            });
+        }
+
+        // ============ 数据处理 ============
+        function handleIncomingData(fromId, data) {
+            switch (data.type) {
+                case 'full_member_list':
+                    // 【关键】收到完整成员列表
+                    data.members.forEach(memberId => {
+                        knownPeers.add(memberId);
+                        
+                        // 自动连接所有未知成员
+                        if (memberId !== myPeerId && !connections.has(memberId)) {
+                            logSystem('🔗 自动连接: ' + memberId);
+                            const newConn = peer.connect(memberId, {
+                                reliable: true,
+                                metadata: { name: myName }
+                            });
+                            setupConnection(newConn);
+                        }
+                    });
+                    
+                    // 更新名字
+                    if (data.memberNames) {
+                        Object.entries(data.memberNames).forEach(([peerId, name]) => {
+                            if (connections.has(peerId)) {
+                                connections.get(peerId).name = name;
+                            }
+                        });
+                    }
+                    
+                    updateMemberList();
+                    break;
+                    
+                case 'member_joined':
+                    // 有新成员加入
+                    knownPeers.add(data.peerId);
+                    
+                    // 【关键】如果还没连接这个新成员，主动连接
+                    if (data.peerId !== myPeerId && !connections.has(data.peerId)) {
+                        logSystem('🔗 新成员加入，自动连接: ' + data.peerId);
+                        const newConn = peer.connect(data.peerId, {
+                            reliable: true,
+                            metadata: { name: myName }
+                        });
+                        setupConnection(newConn);
+                    }
+                    
+                    updateMemberList();
+                    break;
+                    
+                case 'connect_to':
+                    // 被告知需要连接某人
+                    if (data.peerId !== myPeerId && !connections.has(data.peerId)) {
+                        logSystem('🔗 请求连接: ' + data.peerId);
+                        const newConn = peer.connect(data.peerId, {
+                            reliable: true,
+                            metadata: { name: myName }
+                        });
+                        setupConnection(newConn);
+                    }
+                    break;
+                    
+                case 'member_left':
+                    knownPeers.delete(data.peerId);
+                    if (connections.has(data.peerId)) {
+                        connections.get(data.peerId).conn.close();
+                        connections.delete(data.peerId);
+                    }
+                    updateMemberList();
+                    logSystem('👋 ' + data.peerId + ' 离开群聊');
+                    break;
+                    
+                case 'name':
+                    if (connections.has(data.peerId || fromId)) {
+                        const targetId = data.peerId || fromId;
+                        connections.get(targetId).name = data.name;
+                        updateMemberList();
+                    }
+                    break;
+                    
+                case 'chat':
+                    handleChatMessage(fromId, data);
+                    break;
+            }
+        }
+
+        // ============ 聊天消息处理（防死循环） ============
+        function handleChatMessage(fromPeerId, data) {
+            const msgId = data.id;
+            
+            if (receivedMessages.has(msgId)) {
+                return;
+            }
+            
+            receivedMessages.add(msgId);
+            
+            if (receivedMessages.size > MAX_CACHE_SIZE) {
+                const toDelete = Math.floor(MAX_CACHE_SIZE / 2);
+                let count = 0;
+                for (const id of receivedMessages) {
+                    if (count >= toDelete) break;
+                    receivedMessages.delete(id);
+                    count++;
+                }
+            }
+            
+            const senderName = connections.get(fromPeerId)?.name || fromPeerId.substring(0, 8);
+            appendMessage(senderName, data.text, false);
+            
+            broadcastToOthers(fromPeerId, data);
+        }
+
+        window.sendGroupMessage = function() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            const msgData = {
+                type: 'chat',
+                id: generateMessageId(),
+                text: text,
+                sender: myPeerId,
+                timestamp: Date.now()
+            };
+
+            receivedMessages.add(msgData.id);
+            appendMessage('我', text, true);
+            broadcastToAll(msgData);
+            input.value = '';
+        };
+
+        function generateMessageId() {
+            return Date.now().toString(36) + '-' + 
+                   Math.random().toString(36).substring(2, 8) + '-' + 
+                   myPeerId.substring(0, 4);
+        }
+
+        function broadcastToOthers(fromPeerId, data) {
+            connections.forEach((info, peerId) => {
+                if (peerId !== fromPeerId && peerId !== data.sender && info.conn.open) {
+                    info.conn.send(data);
+                }
+            });
+        }
+
+        function broadcastToAll(data) {
+            connections.forEach((info, peerId) => {
+                if (info.conn.open) {
+                    info.conn.send(data);
+                }
+            });
+        }
+
+        // ============ UI 更新 ============
+        function updateMemberList() {
+            const container = document.getElementById('membersList');
+            const countEl = document.getElementById('memberCount');
+            
+            // 计算实际唯一成员数
+            const allMembers = new Set([myPeerId, ...connections.keys()]);
+            const actualCount = allMembers.size;
+            
+            let html = '<span class="member-tag me">🟢 我 (' + myName + ')</span>';
+            
+            connections.forEach((info, peerId) => {
+                const name = info.name || peerId.substring(0, 8);
+                html += '<span class="member-tag">🟢 ' + name + '</span>';
+            });
+            
+            container.innerHTML = html;
+            countEl.textContent = actualCount;
+        }
+
+        function enableChat() {
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+        }
+
+        function disableChat() {
+            document.getElementById('messageInput').disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+        }
+
+        function appendMessage(sender, text, isSelf) {
+            const list = document.getElementById('messageList');
+            const div = document.createElement('div');
+            div.className = 'message-item' + (isSelf ? ' msg-self' : '');
+            div.innerHTML = '<span class="msg-sender">' + sender + ':</span>' + text;
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+        }
+
+        function logSystem(msg) {
+            const list = document.getElementById('messageList');
+            const div = document.createElement('div');
+            div.className = 'msg-system';
+            div.textContent = '📢 ' + msg;
+            list.appendChild(div);
+            list.scrollTop = list.scrollHeight;
+            console.log('📢', msg);
+        }
+
+        document.getElementById('messageInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendGroupMessage();
+        });
+
+        logSystem('🚀 Mesh 群聊已就绪 (完整拓扑)');
+    })();
+</script>
+</body>
+</html>

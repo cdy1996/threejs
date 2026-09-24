@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 连续平滑贪吃蛇</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #87CEEB; /* 天空蓝 */
+            font-family: sans-serif;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            text-shadow: 1px 1px 2px black;
+            pointer-events: none;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+    <div id="ui">
+        <h2>3D 平滑贪吃蛇</h2>
+        <p>分数 (长度): <span id="score">0</span></p>
+        <p>控制: 鼠标移动引导蛇的方向</p>
+    </div>
+
+<script>
+    // 1. 初始化场景、相机和渲染器
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 20, 80); // 添加雾效，掩盖远处的物体生成
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    // 2. 光照系统
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(20, 40, 20);
+    dirLight.castShadow = true;
+    dirLight.shadow.camera.left = -50;
+    dirLight.shadow.camera.right = 50;
+    dirLight.shadow.camera.top = 50;
+    dirLight.shadow.camera.bottom = -50;
+    scene.add(dirLight);
+
+    // 3. 无限地面 (其实是跟着蛇移动的大平板)
+    const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x4caf50 });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    // 添加网格线以体现移动速度
+    const gridHelper = new THREE.GridHelper(1000, 200, 0x000000, 0x000000);
+    gridHelper.material.opacity = 0.2;
+    gridHelper.material.transparent = true;
+    gridHelper.position.y = 0.01;
+    scene.add(gridHelper);
+
+    // 4. 核心：平滑蛇身逻辑
+    let snakePoints = [];
+    let currentLength = 30;     // 初始截数
+    const pointSpacing = 0.4;   // 采样点间距，越小越平滑但消耗性能
+    let snakeSpeed = 0.35;
+    
+    let headPos = new THREE.Vector3(0, 0.6, 0); // 蛇头坐标
+    let headDir = new THREE.Vector3(0, 0, -1);  // 初始移动方向
+
+    // 初始化路径点
+    for(let i = 0; i < currentLength; i++) {
+        snakePoints.push(new THREE.Vector3(0, 0.6, i * pointSpacing));
+    }
+
+    const snakeMat = new THREE.MeshPhongMaterial({ color: 0xff4500, shininess: 80 });
+    let snakeMesh = new THREE.Mesh(new THREE.BufferGeometry(), snakeMat);
+    snakeMesh.castShadow = true;
+    scene.add(snakeMesh);
+
+    // 5. 鼠标射线检测控制方向
+    const mouse = new THREE.Vector2();
+    const targetPos = new THREE.Vector3(0, 0.6, -10);
+    const raycaster = new THREE.Raycaster();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.6); // 高度为 0.6 的水平面
+
+    window.addEventListener('mousemove', (e) => {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    });
+
+    // 6. 障碍物与食物系统
+    const foods = [];
+    const obstacles = [];
+    const foodGeo = new THREE.SphereGeometry(0.5, 16, 16);
+    const foodMat = new THREE.MeshPhongMaterial({ color: 0xffd700, emissive: 0xaa8800 });
+    
+    const obsGeo = new THREE.BoxGeometry(1.5, 3, 1.5);
+    const obsMat = new THREE.MeshLambertMaterial({ color: 0x444444 });
+
+    function spawnItem(arr, geo, mat, isObstacle) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = true;
+        // 在蛇头周围随机生成
+        mesh.position.set(
+            headPos.x + (Math.random() - 0.5) * 80,
+            isObstacle ? 1.5 : 0.6,
+            headPos.z - 20 - Math.random() * 60 // 倾向于生成在前方
+        );
+        scene.add(mesh);
+        arr.push(mesh);
+    }
+
+    // 初始化场景元素
+    for(let i = 0; i < 30; i++) spawnItem(foods, foodGeo, foodMat, false);
+    for(let i = 0; i < 40; i++) spawnItem(obstacles, obsGeo, obsMat, true);
+
+    // 回收机制：实现无限地图
+    function recycleItems(arr, isObstacle) {
+        arr.forEach(item => {
+            // 如果物体被甩在蛇后面太远，就重新生成在蛇前方
+            if (headPos.distanceTo(item.position) > 80 || item.position.z > headPos.z + 20) {
+                item.position.set(
+                    headPos.x + (Math.random() - 0.5) * 80,
+                    isObstacle ? 1.5 : 0.6,
+                    headPos.z - 20 - Math.random() * 60
+                );
+            }
+        });
+    }
+
+    // 7. 动画主循环
+    let isGameOver = false;
+    let score = 0;
+    const scoreUI = document.getElementById('score');
+
+    function animate() {
+        if (isGameOver) return;
+        requestAnimationFrame(animate);
+
+        // --- 控制逻辑 ---
+        raycaster.setFromCamera(mouse, camera);
+        if (raycaster.ray.intersectPlane(plane, targetPos)) {
+            // 计算蛇头到鼠标指向点的期望方向
+            const desiredDir = new THREE.Vector3().subVectors(targetPos, headPos).setY(0).normalize();
+            if (desiredDir.lengthSq() > 0) {
+                // 平滑插值转向 (Lerp)，值越小转弯越平滑
+                headDir.lerp(desiredDir, 0.08).normalize();
+            }
+        }
+
+        // 持续前进
+        headPos.add(headDir.clone().multiplyScalar(snakeSpeed));
+
+        // --- 生成平滑管状模型 ---
+        // 只有当移动距离大于采样点间距时，才记录新点
+        if (headPos.distanceTo(snakePoints[0]) > pointSpacing) {
+            snakePoints.unshift(headPos.clone());
+            // 剔除多余尾部
+            while (snakePoints.length > currentLength) {
+                snakePoints.pop();
+            }
+            
+            // 使用 CatmullRom 曲线生成平滑管道
+            if (snakePoints.length > 2) {
+                const curve = new THREE.CatmullRomCurve3(snakePoints);
+                const newGeo = new THREE.TubeGeometry(curve, snakePoints.length * 2, 0.6, 12, false);
+                
+                if (snakeMesh.geometry) snakeMesh.geometry.dispose(); // 清理旧内存
+                snakeMesh.geometry = newGeo;
+            }
+        }
+
+        // --- 摄像机跟随 ---
+        // 让摄像机平滑追随蛇头
+        camera.position.lerp(new THREE.Vector3(headPos.x, 25, headPos.z + 25), 0.1);
+        camera.lookAt(headPos);
+        
+        // 地面跟随 (营造无限延伸的错觉)
+        ground.position.set(headPos.x, 0, headPos.z);
+        gridHelper.position.set(headPos.x, 0.01, headPos.z);
+
+        // --- 碰撞检测 ---
+        // 1. 吃食物
+        for (let i = foods.length - 1; i >= 0; i--) {
+            if (headPos.distanceTo(foods[i].position) < 1.5) {
+                currentLength += 3; // 身体变长
+                score += 10;
+                scoreUI.innerText = score;
+                // 重置食物位置
+                foods[i].position.set(
+                    headPos.x + (Math.random() - 0.5) * 80,
+                    0.6,
+                    headPos.z - 30 - Math.random() * 40
+                );
+            }
+        }
+
+        // 2. 撞障碍物
+        for (let i = 0; i < obstacles.length; i++) {
+            if (headPos.distanceTo(obstacles[i].position) < 2.0) {
+                isGameOver = true;
+                setTimeout(() => {
+                    alert(`游戏结束！得分: ${score}。 刷新页面重新开始。`);
+                }, 100);
+            }
+        }
+
+        // 3. 撞到自己
+        for (let i = 15; i < snakePoints.length; i++) { // 从第15个点开始检测，防止误触头部
+            if (headPos.distanceTo(snakePoints[i]) < 1.0) {
+                isGameOver = true;
+                setTimeout(() => {
+                    alert(`咬到自己了！得分: ${score}。 刷新页面重新开始。`);
+                }, 100);
+            }
+        }
+
+        // 回收视野外的元素
+        recycleItems(foods, false);
+        recycleItems(obstacles, true);
+
+        // 渲染场景
+        renderer.render(scene, camera);
+    }
+    
+    animate(); // 启动循环
+    
+    // 窗口自适应
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
