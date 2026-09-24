@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>青青草原 · Stylized Grassland</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; }
+  body {
+    background: linear-gradient(#8ec9ee, #d9eefb);
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    user-select: none;
+  }
+  #scene-container { position: fixed; inset: 0; }
+  #scene-container canvas { display: block; }
+  /* 注意：类名不能叫 .title —— lil-gui 的面板/分组标题栏用的就是 .title，
+     裸类选择器会把面板标题栏抽出去固定到屏幕左上角 */
+  .page-title {
+    position: fixed; top: 26px; left: 32px; z-index: 2; pointer-events: none;
+    color: #2f4a2a; letter-spacing: 4px;
+  }
+  .page-title h1 { font-size: 22px; font-weight: 600; text-shadow: 0 2px 10px rgba(255,255,255,.55); }
+  .page-title p { margin-top: 6px; font-size: 12px; color: #4a6b3f; letter-spacing: 2px; }
+  .hint {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 2;
+    color: rgba(47, 74, 42, .6); font-size: 12px; letter-spacing: 2px; pointer-events: none;
+  }
+
+  /* ===== 控制面板（lil-gui）主题：亮色，贴合草原场景 ===== */
+  .lil-gui {
+    --background-color: rgba(255, 255, 255, .82);
+    --title-background-color: rgba(255, 255, 255, .92);
+    --title-text-color: #2f4a2a;   /* 默认是给深色底用的近白色，不改会白底白字 */
+    --widget-color: rgba(90, 150, 60, .16);
+    --hover-color: rgba(90, 150, 60, .28);
+    --focus-color: rgba(90, 150, 60, .38);
+    --number-color: #4a8a2c;
+    --string-color: #c26a3a;
+    --text-color: #33482b;
+    --font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+    z-index: 10;
+  }
+  .lil-gui.root {
+    position: fixed; top: 22px; right: 22px;
+    max-height: calc(100% - 44px);   /* 抵消 top 偏移，否则面板会超出视口底部 */
+    border: 1px solid rgba(90, 150, 60, .3);
+    border-radius: 8px; overflow: hidden;
+    backdrop-filter: blur(10px);
+  }
+  .lil-gui.root > .title { letter-spacing: 2px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="scene-container"></div>
+<div class="page-title">
+  <h1>青青草原</h1>
+  <p>STYLIZED GRASSLAND · THREE.JS</p>
+</div>
+<div class="hint">拖动旋转 · 滚轮缩放 · 右键平移</div>
+<script type="module" src="/src/grassland/main.js"></script>
+</body>
+</html>
