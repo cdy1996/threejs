@@ -16,6 +16,7 @@ uniform vec3 uSunDir;
 uniform vec3 uSunColor;
 uniform float uCloudCover;
 uniform float uTime;
+uniform float uBrightness;
 
 varying vec3 vDir;
 
@@ -67,7 +68,7 @@ void main() {
     col = mix(col, cloudCol, cover * 0.75 * (0.35 + 0.65 * horizonFade));
   }
 
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col * uBrightness, 1.0);
 }
 `;
 
@@ -78,7 +79,8 @@ export function createSky() {
     uSunDir: { value: new THREE.Vector3(8, 15, 6).normalize() },
     uSunColor: { value: new THREE.Color('#fff4dc') },
     uCloudCover: { value: 0.42 },
-    uTime: { value: 0 }
+    uTime: { value: 0 },
+    uBrightness: { value: 0.06 }
   };
 
   const material = new THREE.ShaderMaterial({

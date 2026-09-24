@@ -67,36 +67,62 @@ const params = {
   boatScale: 1.0,
   fishCount: 650,
   fishSpeed: 1.0,
-  waveAmp: 0.3,
-  surfaceOpacity: 1.0,
+  waveAmp: 0.26,
+  surfaceOpacity: 0.55,
   underAlpha: 0.0,
   waterOpacity: 1.0,
   surfaceShallow: '#7fdecd',
-  surfaceDeep: '#0c5f6a',
+  surfaceDeep: '#0f6b5c',
   bubbleCount: 150,
   foamOn: true,
-  foamStrength: 1.0,
-  foamScale: 2.6,
-  foamWake: 1.0,
+  foamStrength: 0.88,
+  foamScale: 2,
+  foamWake: 1,
   // 水面分层开关
-  lNorm: true,
+  lNorm: false,
   lDiff: true,
-  lColor: true,
+  lColor: false,
   lRelief: true,
   lSss: true,
   lFres: true,
   lSpec: true,
-  specSharp: 160,
-  specWideSharp: 24,
-  specInt: 1.5,
-  specWideInt: 0.16,
-  bgColor: '#8fd0cc'
+  lSheen: true,
+  ripple: 0.26,
+  sunDiff: 0,
+  specSharp: 80,
+  specWideSharp: 120,
+  specInt: 1.94,
+  specWideInt: 0.26,
+  sheenColor: '#eef9f4',
+  sheenSharp: 6,
+  sheenInt: 0.6,
+  bgColor: '#8fd0cc',
+  // 太阳
+  sunAzimuth: 98,       // 方位角（度）
+  sunElevation: 24,     // 高度角（度）
+  sunIntensity: 3,      // 阳光强度
+  skyBrightness: 0.06   // 天空亮度
 };
 
 const bgSky = new THREE.Color(params.bgColor);
 const bgUnder = new THREE.Color(COLORS.bgUnder);
 const fogSky = new THREE.Color(params.bgColor).lerp(new THREE.Color(0xffffff), 0.15);
 const fogUnder = new THREE.Color(COLORS.fogUnder);
+
+// ---------- 太阳：统一驱动方向光、天空日盘、水面高光 ----------
+const sunDir = new THREE.Vector3();
+
+function updateSun() {
+  const el = THREE.MathUtils.degToRad(params.sunElevation);
+  const az = THREE.MathUtils.degToRad(params.sunAzimuth);
+  sunDir.set(Math.cos(el) * Math.cos(az), Math.sin(el), Math.cos(el) * Math.sin(az));
+
+  dirLight.position.copy(sunDir).multiplyScalar(20);
+  dirLight.intensity = params.sunIntensity;
+
+  sky.uniforms.uSunDir.value.copy(sunDir);
+  aquarium.surfaceMat.uniforms.uSunDir.value.copy(sunDir);
+}
 
 const gui = new GUI({ title: '控制面板' });
 const fAnim = gui.addFolder('动画');
@@ -118,7 +144,9 @@ fFoam.add(params, 'foamWake', 0, 2, 0.01).name('船尾尾迹').onChange(v => (su
 // 水面分层：逐层开关，便于对照参考图判断哪层该留
 const fLayer = gui.addFolder('水面分层');
 fLayer.add(params, 'lNorm').name('① 法线扰动').onChange(v => (su.uLNormOn.value = v ? 1 : 0));
+fLayer.add(params, 'ripple', 0, 1.8, 0.01).name('↳ 波面起伏').onChange(v => (su.uRipple.value = v));
 fLayer.add(params, 'lDiff').name('② 坡面明暗').onChange(v => (su.uLDiffOn.value = v ? 1 : 0));
+fLayer.add(params, 'sunDiff', 0, 1.5, 0.01).name('↳ 太阳明暗').onChange(v => (su.uSunDiff.value = v));
 fLayer.add(params, 'lColor').name('③ 深浅色块').onChange(v => (su.uLColorOn.value = v ? 1 : 0));
 fLayer.add(params, 'lRelief').name('④ 伪立体光影').onChange(v => (su.uLReliefOn.value = v ? 1 : 0));
 fLayer.add(params, 'lSss').name('⑤ 波峰透光').onChange(v => (su.uLSssOn.value = v ? 1 : 0));
@@ -128,6 +156,10 @@ fLayer.add(params, 'specSharp', 8, 600, 1).name('高光锐度').onChange(v => (s
 fLayer.add(params, 'specWideSharp', 4, 120, 1).name('宽高光锐度').onChange(v => (su.uSpecWideSharp.value = v));
 fLayer.add(params, 'specInt', 0, 5, 0.01).name('高光强度').onChange(v => (su.uSpecInt.value = v));
 fLayer.add(params, 'specWideInt', 0, 1, 0.01).name('宽高光强度').onChange(v => (su.uSpecWideInt.value = v));
+fLayer.add(params, 'lSheen').name('⑧ 宽白泛光').onChange(v => (su.uLSheenOn.value = v ? 1 : 0));
+fLayer.add(params, 'sheenInt', 0, 1.5, 0.01).name('泛光强度').onChange(v => (su.uSheenInt.value = v));
+fLayer.add(params, 'sheenSharp', 1, 40, 0.1).name('泛光收束').onChange(v => (su.uSheenSharp.value = v));
+fLayer.addColor(params, 'sheenColor').name('泛光颜色').onChange(v => su.uSheenColor.value.set(v));
 
 const fFish = gui.addFolder('鱼群');
 fFish.add(params, 'fishCount', 100, 1500, 10).name('数量').onFinishChange(v => rebuildFish(v));
@@ -156,11 +188,21 @@ fWater.addColor(params, 'surfaceDeep').name('水面深色').onChange(v => {
   aquarium.surfaceMat.uniforms.uDeepColor.value.set(v);
 });
 
+const fSun = gui.addFolder('太阳');
+fSun.add(params, 'sunAzimuth', 0, 360, 1).name('方位角(°)').onChange(updateSun);
+fSun.add(params, 'sunElevation', 5, 89, 1).name('高度角(°)').onChange(updateSun);
+fSun.add(params, 'sunIntensity', 0, 3, 0.01).name('阳光强度').onChange(updateSun);
+fSun.add(params, 'skyBrightness', 0, 2, 0.01).name('天空亮度')
+  .onChange(v => (sky.uniforms.uBrightness.value = v));
+
 const fEnv = gui.addFolder('环境');
 fEnv.addColor(params, 'bgColor').name('背景颜色').onChange(v => {
   bgSky.set(v);
   fogSky.set(v).lerp(new THREE.Color(0xffffff), 0.15);
 });
+
+// 太阳默认角度还原原先硬编码的 (8, 15, 6) 方向
+updateSun();
 
 // 鱼群数量变更：销毁重建
 function rebuildFish(count) {

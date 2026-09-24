@@ -73,7 +73,8 @@ const surfaceVertex = /* glsl */ `
     float rr = length(p) / uRadius;
     float damp = 1.0 - smoothstep(0.72, 0.995, rr) * 0.3;
 
-    // 四组方向正弦波：高度 + 解析偏导（用于法线）
+    // 八组方向正弦波：方向绕一圈铺开、波数分层，高度 + 解析偏导（用于法线）
+    // 角速度取 w = 1.15·√k（深水色散关系），各波速一致，不会出现大小波互相追赶
     float h = 0.0;
     vec2 grad = vec2(0.0);
     #define WAVE(dx, dy, k, a, w) \
@@ -83,10 +84,14 @@ const surfaceVertex = /* glsl */ `
       h += a * sin(ph); \
       grad += d * (a * k * cos(ph)); \
     }
-    WAVE( 1.0,  0.45, 0.95, 0.50, 1.15)
-    WAVE(-0.35, 1.0 , 1.30, 0.32, 0.90)
-    WAVE( 0.8, -0.7 , 2.10, 0.16, 1.60)
-    WAVE(-0.6, -0.8 , 3.10, 0.09, 2.10)
+    WAVE( 0.978,  0.208, 0.85, 0.44, 1.060)
+    WAVE( 0.530,  0.848, 1.15, 0.32, 1.233)
+    WAVE(-0.225,  0.974, 1.60, 0.22, 1.455)
+    WAVE(-0.857,  0.515, 2.10, 0.16, 1.667)
+    WAVE(-0.970, -0.242, 2.60, 0.11, 1.855)
+    WAVE(-0.485, -0.875, 3.10, 0.08, 2.024)
+    WAVE( 0.309, -0.951, 3.65, 0.06, 2.197)
+    WAVE( 0.899, -0.438, 4.20, 0.05, 2.357)
     #undef WAVE
 
     // 中心涟漪（同心扩散）
@@ -129,11 +134,19 @@ const surfaceFragment = /* glsl */ `
   uniform float uLSssOn;
   uniform float uLFresOn;
   uniform float uLSpecOn;
+  uniform float uLSheenOn;
+  // 波面起伏强度 / 太阳明暗对比
+  uniform float uRipple;
+  uniform float uSunDiff;
   // 太阳高光可调参数
   uniform float uSpecSharp;
   uniform float uSpecWideSharp;
   uniform float uSpecInt;
   uniform float uSpecWideInt;
+  // 宽白泛光可调参数
+  uniform vec3 uSheenColor;
+  uniform float uSheenSharp;
+  uniform float uSheenInt;
   varying vec3 vWorldPos;
   varying vec3 vNormal;
   varying float vWave;
@@ -175,10 +188,13 @@ const surfaceFragment = /* glsl */ `
       vec2 p = vWorldPos.xz;
 
       // ① 小尺度 noise 扰动法线：打碎正弦法线的周期性高光，形成随机波光
+      //    高频细波把波面朝向铺开——太阳反光要散成一片、波谷要压出阴影，都靠这一层
       if (uLNormOn > 0.5) {
         float nx = fbm(p * 3.0 + vec2(uTime * 0.10, uTime * 0.07)) - 0.5;
         float nz = fbm(p * 3.0 - vec2(uTime * 0.08, uTime * 0.09) + 4.7) - 0.5;
-        n = normalize(n + vec3(nx, 0.0, nz) * 0.35);
+        float hx = fbm(p * 9.0 + vec2(uTime * 0.23, uTime * 0.17) + 11.3) - 0.5;
+        float hz = fbm(p * 9.0 - vec2(uTime * 0.20, uTime * 0.25) + 2.1) - 0.5;
+        n = normalize(n + vec3(nx + hx * 0.6, 0.0, nz + hz * 0.6) * uRipple);
       }
 
       // ② 太阳漫反射：仅保留轻微坡面明暗
@@ -199,8 +215,8 @@ const surfaceFragment = /* glsl */ `
         col *= 1.0 - 0.20 * smoothstep(0.42, 0.18, mottle);
       }
 
-      // ⑤ 轻微坡面明暗 + 波峰透光（SSS）
-      if (uLDiffOn > 0.5) col *= mix(0.88, 1.12, ndl);
+      // ⑤ 太阳坡面明暗：迎光面提亮、背光面压暗，波谷自然落进阴影 + 波峰透光（SSS）
+      if (uLDiffOn > 0.5) col *= mix(1.0 - 0.55 * uSunDiff, 1.0 + 0.45 * uSunDiff, ndl);
       if (uLSssOn > 0.5) {
         float sss = pow(max(dot(V, normalize(uSunDir + vec3(0.0, 0.35, 0.0))), 0.0), 3.0);
         col += vec3(0.30, 0.85, 0.62) * sss * smoothstep(0.3, 1.0, vWave) * 0.35;
@@ -216,6 +232,13 @@ const surfaceFragment = /* glsl */ `
         float spec = pow(max(dot(R, uSunDir), 0.0), uSpecSharp);
         float specWide = pow(max(dot(R, uSunDir), 0.0), uSpecWideSharp);
         col += vec3(1.0, 0.97, 0.88) * (spec * uSpecInt + specWide * uSpecWideInt);
+      }
+
+      // ⑧ 宽白泛光：光照驱动的超宽瓣（近似高粗糙度反射），大面积铺白，
+      //    由波面法线调制明暗 → 靠光照显出水面不平，而不是贴一层白
+      if (uLSheenOn > 0.5) {
+        float sheen = pow(max(dot(n, uSunDir), 0.0), uSheenSharp);
+        col = mix(col, uSheenColor, clamp(sheen * uSheenInt, 0.0, 1.0));
       }
       // 半透明水膜：正视角透出水下的鱼和海底，掠射角反射天空而变实
       alpha = mix(0.55, 0.92, fres) * uOpacity;
@@ -338,42 +361,49 @@ export function createAquarium() {
 
   // ---- 水面（细分圆盘 + 菲涅尔/太阳高光） ----
   const sunDir = new THREE.Vector3(8, 15, 6).normalize();
-  const surfaceGeo = makeDiscSurfaceGeometry(TANK.waterRadius * 0.998, 14, 72);
+  const surfaceGeo = makeDiscSurfaceGeometry(TANK.waterRadius * 0.998, 24, 128);
   const surfaceMat = new THREE.ShaderMaterial({
     transparent: true,
     side: THREE.DoubleSide,
     depthWrite: false,
     uniforms: {
       uShallowColor: { value: new THREE.Color(COLORS.waterShallow) },
-      uDeepColor: { value: new THREE.Color(COLORS.waterDeep) },
+      // 暗端用深青绿（不是蓝）：参考图的水面暗部是绿，蓝在下面的水体上
+      uDeepColor: { value: new THREE.Color(0x0f6b5c) },
       uSkyColor: { value: new THREE.Color(0xbfeae6) },
       uSunDir: { value: sunDir },
       uTime: { value: 0 },
-      uWaveAmp: { value: 0.3 },
+      uWaveAmp: { value: 0.26 },
       uRadius: { value: TANK.waterRadius },
       uWaterTopY: { value: TANK.waterTopY },
-      uOpacity: { value: 1.0 },
+      uOpacity: { value: 0.55 },
       uUnderAlpha: { value: 0.0 },
       // 泡沫
       uFoamOn: { value: 1 },
-      uFoamStrength: { value: 1.0 },
-      uFoamScale: { value: 2.6 },
+      uFoamStrength: { value: 0.88 },
+      uFoamScale: { value: 2 },
       uFoamWake: { value: 1.0 },
       uBoatPos: { value: new THREE.Vector2(-1.8, 0.6) },
       uBoatDir: { value: new THREE.Vector2(Math.cos(0.5), -Math.sin(0.5)) },
       uBoatScale: { value: 1.0 },
       // 分层开关
-      uLNormOn: { value: 1 },
+      uLNormOn: { value: 0 },
       uLDiffOn: { value: 1 },
-      uLColorOn: { value: 1 },
+      uLColorOn: { value: 0 },
       uLReliefOn: { value: 1 },
       uLSssOn: { value: 1 },
       uLFresOn: { value: 1 },
       uLSpecOn: { value: 1 },
-      uSpecSharp: { value: 160 },
-      uSpecWideSharp: { value: 24 },
-      uSpecInt: { value: 1.5 },
-      uSpecWideInt: { value: 0.16 }
+      uLSheenOn: { value: 1 },
+      uRipple: { value: 0.26 },
+      uSunDiff: { value: 0 },
+      uSpecSharp: { value: 80 },
+      uSpecWideSharp: { value: 120 },
+      uSpecInt: { value: 1.94 },
+      uSpecWideInt: { value: 0.26 },
+      uSheenColor: { value: new THREE.Color(0xeef9f4) },
+      uSheenSharp: { value: 6 },
+      uSheenInt: { value: 0.6 }
     },
     vertexShader: surfaceVertex,
     fragmentShader: surfaceFragment
