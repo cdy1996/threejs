@@ -34,7 +34,6 @@
     pointer-events: none; text-align: center; line-height: 1.8;
     text-shadow: 0 1px 6px rgba(0,0,0,.8);
   }
-  .hint a { color: #ffe6a8; text-decoration: none; pointer-events: auto; }
 
   #loading {
     position: fixed; inset: 0; z-index: 20;
@@ -55,13 +54,7 @@
   <p>MEADOW &amp; LOG CABIN · PROCEDURAL THREE.JS</p>
 </div>
 <div id="stat">初始化中…</div>
-<div class="hint">
-  拖拽旋转 · 滚轮缩放 · 右键平移 · H 键收起面板 ｜
-  <a href="/index.html">→ 鱼缸</a> ·
-  <a href="/blackhole.html">黑洞</a> ·
-  <a href="/ocean.html">海面</a> ·
-  <a href="/fire.html">火焰</a>
-</div>
+<div class="hint">拖拽旋转 · 滚轮缩放 · 右键平移 · H 键收起面板</div>
 <div id="loading">正 在 生 长 草 地 …</div>
 
 <script>
@@ -76,5 +69,6 @@
 <script>
   setTimeout(() => document.getElementById('loading').classList.add('hide'), 900);
 </script>
+<script src="/nav.js" defer></script>
 </body>
 </html>

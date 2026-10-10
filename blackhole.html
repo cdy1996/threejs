@@ -19,7 +19,6 @@
       user-select: none;
       z-index: 10;
     }
-    #hud a { color: #ffb45e; text-decoration: none; pointer-events: auto; }
     #loading {
       position: fixed;
       inset: 0;
@@ -39,7 +38,7 @@
 <body>
   <div id="app"></div>
   <div id="loading">正 在 穿 越 事 件 视 界 …</div>
-  <div id="hud">黑洞引力透镜 · 拖拽旋转 · 滚轮缩放 ｜ <a href="/">← 鱼缸场景</a></div>
+  <div id="hud">黑洞引力透镜 · 拖拽旋转 · 滚轮缩放</div>
   <script>
     window.__errs = [];
     window.addEventListener('error', (e) => {
@@ -47,5 +46,6 @@
     });
   </script>
   <script type="module" src="/src/blackhole/main.js"></script>
+  <script src="/nav.js" defer></script>
 </body>
 </html>

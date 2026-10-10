@@ -256,6 +256,9 @@
     border: 1px solid rgba(46, 201, 255, .25);
   }
   .lil-gui.root > .title { letter-spacing: 2px; }
+
+  /* 全局场景导航：抬到页面自有底部导航之上，避免遮挡 */
+  #scene-nav { bottom: 90px !important; }
 </style>
 </head>
 <body>
@@ -426,5 +429,6 @@
 
 <script type="module" src="/src/fire/main.js"></script>
 <script type="module" src="/src/fire/charts.js"></script>
+<script src="/nav.js" defer></script>
 </body>
 </html>

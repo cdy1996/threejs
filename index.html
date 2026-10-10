@@ -11,7 +11,7 @@
     #hud {
       position: fixed;
       left: 16px;
-      bottom: 14px;
+      bottom: 52px;
       color: rgba(230, 250, 250, 0.85);
       font: 12px/1.6 "PingFang SC", "Microsoft YaHei", sans-serif;
       text-shadow: 0 1px 2px rgba(0, 30, 40, 0.6);
@@ -38,7 +38,7 @@
 <body>
   <div id="app"></div>
   <div id="loading">正 在 潜 入 海 洋 …</div>
-  <div id="hud">拖拽旋转 · 滚轮缩放 · 右键平移 ｜ <a href="/blackhole.html" style="color:#ffd9a0;text-decoration:none;">→ 黑洞场景</a> ｜ <a href="/ocean.html" style="color:#a0e8ff;text-decoration:none;">→ 海面漂流瓶</a> ｜ <a href="/meadow.html" style="color:#c8e88a;text-decoration:none;">→ 草原木屋</a> ｜ <a href="/seasun.html" style="color:#ffd9a0;text-decoration:none;">→ 海天日出</a></div>
+  <div id="hud">拖拽旋转 · 滚轮缩放 · 右键平移</div>
   <script>
     window.__errs = [];
     window.addEventListener('error', (e) => {
@@ -48,5 +48,6 @@
     });
   </script>
   <script type="module" src="/src/main.js"></script>
+  <script src="/nav.js" defer></script>
 </body>
 </html>
