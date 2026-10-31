@@ -1,0 +1,49 @@
+/* replica.css — 桌面端适配（原版为 B 站移动端玩具，#app 限宽 480px）
+ * 宽屏下放开宽度，让造岛画布铺满窗口；相机投影会随宽高比自适应，无需其他改动。
+ */
+@media (min-width: 560px) {
+  #app {
+    max-width: 100%;
+  }
+}
+
+/* 桌面端提示条与工具栏留出更舒适的呼吸空间 */
+@media (min-width: 560px) and (min-height: 560px) {
+  .toolbar {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 9px;
+  }
+  .hint {
+    font-size: 11px;
+    margin-bottom: 15px;
+  }
+}
+
+/* 无 WebGL 时的兜底样式兜底：保持 fallback 面板可读 */
+#fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #188c9e;
+  color: #f6f1d8;
+  text-align: center;
+  padding: 24px;
+}
+#fallback[hidden] {
+  display: none;
+}
+#fallback h2 {
+  font-weight: 500;
+  font-size: 16px;
+}
+#fallback button {
+  background: #36584a;
+  color: #f6f1d8;
+  border-radius: 14px;
+  padding: 9px 18px;
+}

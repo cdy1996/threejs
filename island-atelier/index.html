@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>屿生 · 掌心里的小岛</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23188c9e'/%3E%3Cpath d='M8 44q12-16 24 0t24-6v14a6 6 0 0 1-6 6H14a6 6 0 0 1-6-6z' fill='%2336584a'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./css/style.css">
+<link rel="stylesheet" href="./css/toy.css">
+<link rel="stylesheet" href="./css/replica.css">
+</head>
+<body><div id="app">
+<main id="world" aria-label="交互式造岛画布"></main>
+<div class="view-tools"><button id="rotate-left" aria-label="向左旋转">↶</button><button id="rotate-right" aria-label="向右旋转">↷</button><span></span><button id="zoom-in" aria-label="放大">＋</button><button id="zoom-out" aria-label="缩小">−</button></div>
+<section id="settings" class="sheet" hidden aria-label="岛屿设置"><div class="sheet-title"><h2>这座岛的心情</h2><div class="sheet-actions"><button id="undo" aria-label="撤销" title="撤销">↶</button><button id="redo" aria-label="重做" title="重做">↷</button><button id="sound-toggle" aria-label="关闭声音" aria-pressed="true" title="声音">♫</button><button id="settings-close" aria-label="关闭设置">×</button></div></div><label class="row" for="density">植被丰度 <b id="density-label">葱郁</b></label><input id="density" type="range" min="0" max="100" value="72" aria-label="植被丰度"><div class="toggles"><label>常显建造网格 <input type="checkbox" id="grid"></label><label>海浪流动 <input type="checkbox" id="waves" checked></label></div><div class="audio-settings"><div class="audio-heading"><span>小岛的声音</span><small id="audio-note">轻点海岛，听见海风</small></div><label class="audio-row"><span>可爱音效</span><input id="sfx-enabled" type="checkbox" checked></label><input id="sfx-volume" type="range" min="0" max="100" value="65" aria-label="音效音量"><label class="audio-row"><span>背景音乐 · 海风慢慢</span><input id="music-enabled" type="checkbox" checked></label><input id="music-volume" type="range" min="0" max="100" value="55" aria-label="背景音乐音量"></div><div class="stats"><span><b id="count">0</b> 格地形</span><span><b id="height">0</b> 层</span><span><b id="plants">0</b> 棵树</span></div><button class="new-island" id="regenerate">⟳ 遇见另一座岛</button><div class="secondary"><button id="empty">从一片海开始</button><button id="reset-view">视角归位</button></div></section>
+<footer><section id="decor-tray" hidden aria-label="装饰选择"><div class="tray-title"><span>给小岛一点生气</span><div><button id="decor-erase" aria-pressed="false">移除</button><span id="decor-count">0 / 10</span></div></div><div class="decor-options"><button class="decor-option active" data-decor="birds" aria-pressed="true"><span class="decor-icon">⌁</span><strong>飞鸟</strong><small>寻找山峦，结伴滑翔</small></button><button class="decor-option" data-decor="boat" aria-pressed="false"><span class="decor-icon">⛵</span><strong>小船</strong><small>环岛巡游，随浪轻摇</small></button><button class="decor-option" data-decor="waterfall" aria-pressed="false"><span class="decor-icon">≋</span><strong>瀑布</strong><small>山间开泉，流向海面</small></button></div></section><div class="hint" id="hint">轻点抬高 · 划过海面，连成一座岛</div><nav class="toolbar" aria-label="造岛工具"><button class="tool active" data-mode="raise"><span>▰</span><b>造陆</b></button><button class="tool" data-mode="lower"><span>▱</span><b>削低</b></button><button class="tool" data-mode="plant"><span>❋</span><b>植绿</b></button><button class="tool" data-mode="decorate"><span>✧</span><b>装饰</b></button><button class="tool" data-mode="orbit"><span>↻</span><b>环顾</b></button><button id="settings-toggle" class="more-tool" aria-label="岛屿设置" aria-expanded="false"><span>☷</span><b>更多</b></button></nav><p class="bottom-note">山海之间，自在生长。</p></footer>
+<div id="toast" role="status"></div><div id="fallback" hidden><h2>海岛暂时休息了</h2><p>当前图形环境不可用，请尝试支持 WebGL 的浏览器。</p><button id="retry">重新载入</button></div>
+</div>
+<script src="./js/vendor/three.min.js"></script>
+<script src="./js/storage.js"></script>
+<script src="./js/terrain.js"></script>
+<script src="./js/surface-details.js"></script>
+<script src="./js/waterfalls.js"></script>
+<script src="./js/boat-navigation.js"></script>
+<script src="./js/decorations.js"></script>
+<script src="./js/audio.js"></script>
+<script src="./js/feedback.js"></script>
+<script src="./js/controls.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
