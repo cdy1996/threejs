@@ -67,19 +67,20 @@ const params = {
   boatScale: 1.0,
   fishCount: 650,
   fishSpeed: 1.0,
-  waveAmp: 0.26,
-  surfaceOpacity: 0.55,
+  waveAmp: 0.36,
+  surfaceOpacity: 0.62,
   underAlpha: 0.0,
   waterOpacity: 1.0,
   surfaceShallow: '#7fdecd',
   surfaceDeep: '#0f6b5c',
   bubbleCount: 150,
   foamOn: true,
-  foamStrength: 0.88,
-  foamScale: 2,
+  foamStrength: 0.9,
+  foamScale: 3.5,
   foamWake: 1,
+  foamEdge: 0.35,
   // 水面分层开关
-  lNorm: false,
+  lNorm: true,
   lDiff: true,
   lColor: false,
   lRelief: true,
@@ -87,15 +88,15 @@ const params = {
   lFres: true,
   lSpec: true,
   lSheen: true,
-  ripple: 0.26,
+  ripple: 0.36,
   sunDiff: 0,
-  specSharp: 80,
-  specWideSharp: 120,
-  specInt: 1.94,
-  specWideInt: 0.26,
-  sheenColor: '#eef9f4',
-  sheenSharp: 6,
-  sheenInt: 0.6,
+  specSharp: 110,
+  specWideSharp: 22,
+  specInt: 1.05,
+  specWideInt: 0.34,
+  sheenColor: '#dff3ec',
+  sheenSharp: 5,
+  sheenInt: 0.42,
   bgColor: '#8fd0cc',
   // 太阳
   sunAzimuth: 98,       // 方位角（度）
@@ -140,6 +141,7 @@ fFoam.add(params, 'foamOn').name('开启').onChange(v => (su.uFoamOn.value = v ?
 fFoam.add(params, 'foamStrength', 0, 2, 0.01).name('强度').onChange(v => (su.uFoamStrength.value = v));
 fFoam.add(params, 'foamScale', 2, 12, 0.1).name('细腻度').onChange(v => (su.uFoamScale.value = v));
 fFoam.add(params, 'foamWake', 0, 2, 0.01).name('船尾尾迹').onChange(v => (su.uFoamWake.value = v));
+fFoam.add(params, 'foamEdge', 0, 1, 0.01).name('边缘亮边').onChange(v => (su.uFoamEdge.value = v));
 
 // 水面分层：逐层开关，便于对照参考图判断哪层该留
 const fLayer = gui.addFolder('水面分层');

@@ -46,8 +46,8 @@ const waterFragment = /* glsl */ `
     float fres = pow(1.0 - abs(dot(N, V)), 3.0);
     col = mix(col, uSkyColor, fres * 0.5);
 
-    float alpha = mix(0.13 + depth * 0.20, 0.48 + depth * 0.24, uUnderwater);
-    alpha = mix(alpha, 0.82, fres * 0.6);
+    float alpha = mix(0.17 + depth * 0.26, 0.50 + depth * 0.26, uUnderwater);
+    alpha = mix(alpha, 0.84, fres * 0.6);
     if (!gl_FrontFacing) {
       col = mix(col, uDeepColor, 0.6);
       alpha = max(alpha, mix(0.15, 0.56, uUnderwater));
@@ -84,21 +84,28 @@ const surfaceVertex = /* glsl */ `
       h += a * sin(ph); \
       grad += d * (a * k * cos(ph)); \
     }
-    WAVE( 0.978,  0.208, 0.85, 0.44, 1.060)
-    WAVE( 0.530,  0.848, 1.15, 0.32, 1.233)
+    WAVE( 0.978,  0.208, 0.85, 0.52, 1.060)
+    WAVE( 0.530,  0.848, 1.15, 0.36, 1.233)
     WAVE(-0.225,  0.974, 1.60, 0.22, 1.455)
     WAVE(-0.857,  0.515, 2.10, 0.16, 1.667)
     WAVE(-0.970, -0.242, 2.60, 0.11, 1.855)
     WAVE(-0.485, -0.875, 3.10, 0.08, 2.024)
     WAVE( 0.309, -0.951, 3.65, 0.06, 2.197)
     WAVE( 0.899, -0.438, 4.20, 0.05, 2.357)
+    // 更细的短波：把大浪面再打碎一层，产生密集小起伏（体块感的关键）
+    WAVE( 0.640, -0.768, 5.10, 0.042, 2.597)
+    WAVE(-0.760, -0.650, 6.20, 0.033, 2.864)
+    WAVE( 0.995,  0.100, 7.40, 0.026, 3.128)
     #undef WAVE
 
-    // 中心涟漪（同心扩散）
+    // 双层同心涟漪（同心扩散，频率/速度错开 → 叠加出不规则的圈层起伏）
     float rlen = length(p);
     float phr = rlen * 1.4 - uTime * 1.7;
     h += 0.14 * sin(phr);
     grad += normalize(p + 0.0001) * (0.14 * 1.4 * cos(phr));
+    float phr2 = rlen * 2.9 - uTime * 2.4;
+    h += 0.07 * sin(phr2);
+    grad += normalize(p + 0.0001) * (0.07 * 2.9 * cos(phr2));
 
     h *= damp * uWaveAmp;
     grad *= damp * uWaveAmp;
@@ -123,6 +130,8 @@ const surfaceFragment = /* glsl */ `
   uniform float uFoamStrength;
   uniform float uFoamScale;
   uniform float uFoamWake;
+  uniform float uFoamEdge;
+  uniform float uRadius;
   uniform vec2 uBoatPos;
   uniform vec2 uBoatDir;
   uniform float uBoatScale;
@@ -178,7 +187,6 @@ const surfaceFragment = /* glsl */ `
 
   void main() {
     vec3 V = normalize(cameraPosition - vWorldPos);
-    float crest = smoothstep(0.2, 1.0, vWave);
 
     vec3 col;
     float alpha;
@@ -186,28 +194,38 @@ const surfaceFragment = /* glsl */ `
       // ---------- 水面上方视角 ----------
       vec3 n = normalize(vNormal);
       vec2 p = vWorldPos.xz;
+      float t = uTime;
 
-      // ① 小尺度 noise 扰动法线：打碎正弦法线的周期性高光，形成随机波光
-      //    高频细波把波面朝向铺开——太阳反光要散成一片、波谷要压出阴影，都靠这一层
-      if (uLNormOn > 0.5) {
-        float nx = fbm(p * 3.0 + vec2(uTime * 0.10, uTime * 0.07)) - 0.5;
-        float nz = fbm(p * 3.0 - vec2(uTime * 0.08, uTime * 0.09) + 4.7) - 0.5;
-        float hx = fbm(p * 9.0 + vec2(uTime * 0.23, uTime * 0.17) + 11.3) - 0.5;
-        float hz = fbm(p * 9.0 - vec2(uTime * 0.20, uTime * 0.25) + 2.1) - 0.5;
-        n = normalize(n + vec3(nx + hx * 0.6, 0.0, nz + hz * 0.6) * uRipple);
+      // ① 多尺度 noise 扰动法线：把波面朝向彻底铺开。
+      //    这是"硬白高光块"变成"柔和碎波光"的关键——同一束太阳光被无数小面
+      //    反射向不同方向，高光自然散开；波谷也能借朝向差压出阴影。
+      //    关掉开关时仍保留 45% 扰动，避免退回单一硬块。
+      float nAmp = uRipple * mix(0.45, 1.0, uLNormOn);
+      {
+        float nx = fbm(p * 3.4 + vec2(t * 0.11, t * 0.08)) - 0.5;
+        float nz = fbm(p * 3.4 - vec2(t * 0.09, t * 0.10) + 4.7) - 0.5;
+        float hx = fbm(p * 9.5 + vec2(t * 0.24, t * 0.18) + 11.3) - 0.5;
+        float hz = fbm(p * 9.5 - vec2(t * 0.21, t * 0.26) + 2.1) - 0.5;
+        n = normalize(n + vec3(nx + hx * 0.7, 0.0, nz + hz * 0.7) * nAmp);
       }
 
-      // ② 太阳漫反射：仅保留轻微坡面明暗
+      // ② 太阳漫反射
       float ndl = max(dot(n, uSunDir), 0.0);
 
-      // ③ noise 驱动的深浅色块（"模拟海面"的蓝色变化来源，关掉即回到单一水色）
+      // ③ 深浅色块
       col = uShallowColor;
       float mottle = 0.5;
       if (uLColorOn > 0.5) {
-        mottle = fbm(p * 1.1 + vec2(uTime * 0.055, -uTime * 0.04)) * 0.65
-               + fbm(p * 2.4 - vec2(uTime * 0.045, uTime * 0.06) + 7.3) * 0.35;
+        mottle = fbm(p * 1.1 + vec2(t * 0.055, -t * 0.04)) * 0.65
+               + fbm(p * 2.4 - vec2(t * 0.045, t * 0.06) + 7.3) * 0.35;
         col = mix(uDeepColor, uShallowColor, clamp(mottle, 0.0, 1.0));
       }
+
+      // ③b 高度明暗：波峰受光提亮、波谷遮挡压暗。
+      //     与法线无关、纯按波高给明暗，即使在掠射角也能看出高度差——
+      //     这是让水面"立起来"的核心一层。
+      float hshade = smoothstep(-0.55, 0.85, vWave);
+      col *= mix(0.70, 1.15, hshade);
 
       // ④ 伪立体光影：亮斑中心提亮、暗斑压暗，让色块"鼓起来"
       if (uLReliefOn > 0.5) {
@@ -215,7 +233,7 @@ const surfaceFragment = /* glsl */ `
         col *= 1.0 - 0.20 * smoothstep(0.42, 0.18, mottle);
       }
 
-      // ⑤ 太阳坡面明暗：迎光面提亮、背光面压暗，波谷自然落进阴影 + 波峰透光（SSS）
+      // ⑤ 太阳坡面明暗 + 波峰透光（SSS）
       if (uLDiffOn > 0.5) col *= mix(1.0 - 0.55 * uSunDiff, 1.0 + 0.45 * uSunDiff, ndl);
       if (uLSssOn > 0.5) {
         float sss = pow(max(dot(V, normalize(uSunDir + vec3(0.0, 0.35, 0.0))), 0.0), 3.0);
@@ -226,58 +244,76 @@ const surfaceFragment = /* glsl */ `
       float fres = pow(1.0 - max(dot(n, V), 0.0), 3.0);
       if (uLFresOn > 0.5) col = mix(col, uSkyColor, fres * 0.7);
 
-      // ⑦ 太阳镜面高光：白色由光照反射自然产生，靠法线起伏显出水面不平
+      // ⑦ 太阳高光：宽软瓣（大面积柔和反光）+ 窄碎瓣（波光闪点）。
+      //    两者都建立在扰动法线上——宽瓣铺成柔和光泽，窄瓣碎成点点波光，
+      //    不再是光滑法线下的单一硬白块。
       if (uLSpecOn > 0.5) {
         vec3 R = reflect(-V, n);
-        float spec = pow(max(dot(R, uSunDir), 0.0), uSpecSharp);
-        float specWide = pow(max(dot(R, uSunDir), 0.0), uSpecWideSharp);
-        col += vec3(1.0, 0.97, 0.88) * (spec * uSpecInt + specWide * uSpecWideInt);
+        float ndh = max(dot(R, uSunDir), 0.0);
+        float specWide = pow(ndh, uSpecWideSharp);
+        float spec = pow(ndh, uSpecSharp);
+        col += vec3(1.0, 0.98, 0.92) * (spec * uSpecInt + specWide * uSpecWideInt);
       }
 
-      // ⑧ 宽白泛光：光照驱动的超宽瓣（近似高粗糙度反射），大面积铺白，
-      //    由波面法线调制明暗 → 靠光照显出水面不平，而不是贴一层白
+      // ⑧ 宽白泛光：光照驱动的超宽瓣（近似高粗糙度反射）
       if (uLSheenOn > 0.5) {
         float sheen = pow(max(dot(n, uSunDir), 0.0), uSheenSharp);
         col = mix(col, uSheenColor, clamp(sheen * uSheenInt, 0.0, 1.0));
       }
-      // 半透明水膜：正视角透出水下的鱼和海底，掠射角反射天空而变实
-      alpha = mix(0.55, 0.92, fres) * uOpacity;
 
-      // ---------- 卡通厚泡沫：低频大团块 + 窄过渡硬边 + 细节噪声咬边（沸腾感） ----------
+      // 半透明水膜：正视角透出水下的鱼和海底，掠射角反射天空而变实；
+      // 波峰处略实一点，让起伏边缘更"有肉"
+      alpha = mix(0.58, 0.95, fres) * uOpacity;
+      alpha = max(alpha, hshade * 0.18 * uOpacity);
+
+      // ---------- 泡沫：随机碎沫 + 船体接触浪花 ----------
       if (uFoamOn > 0.5) {
-        float t = uTime;
-        // 轻度拉长采样 → 碎沫点缀 + 轻微流动感
         vec2 ps = p * vec2(0.7, 1.0);
-        // 大尺度形状场（决定"哪里有沫"）+ 细节噪声（腐蚀边缘）
         float shapeN = fbm(ps * uFoamScale + vec2(t * 0.08, -t * 0.05));
-        float detailN = fbm(ps * uFoamScale * 3.1 - vec2(t * 0.12, t * 0.09) + 7.3);
+        float detailN = fbm(ps * uFoamScale * 3.4 - vec2(t * 0.12, t * 0.09) + 7.3);
+        float froth = fbm(ps * uFoamScale * 8.0 + vec2(t * 0.35, t * 0.30) + 3.1);
 
-        // 1) 碎沫点缀：独立 noise 阈值随机撒沫，波峰处概率略增（不再由波形主导）
+        // 1) 波峰/坡面随机碎沫
         float crestM = smoothstep(0.55, 0.95, vWave) * 0.35 + (1.0 - n.y) * 0.45;
-        float field1 = shapeN + crestM + (detailN - 0.5) * 0.35;
-        float f1 = smoothstep(0.70, 0.78, field1);
+        float f1 = smoothstep(0.66, 0.74, shapeN + crestM + (detailN - 0.5) * 0.35);
 
-        // 2) 船尾尾迹：V 形扩散条带 + 船身周围湍流白沫，细节噪声咬边
+        // 2) 船：环船白沫 + 船首劈水 + 船尾 V 形尾迹
         vec2 d = p - uBoatPos;
-        float lx = dot(d, uBoatDir);
-        float lz = dot(d, vec2(-uBoatDir.y, uBoatDir.x));
+        float dl = length(d);
+        vec2 fwd = uBoatDir;
+        vec2 side = vec2(-fwd.y, fwd.x);
+        float lx = dot(d, fwd);
+        float lz = dot(d, side);
+        float sc = max(uBoatScale, 0.001);
+
+        // 环船白沫：带宽略宽，避免贴成一道硬白线
+        float hullRing = exp(-pow((dl - 1.3 * sc) / (0.62 * sc), 2.0));
+        float bowV = exp(-pow(abs(lz / sc) - clamp(lx / sc + 0.7, 0.0, 2.4) * 0.7, 2.0) * 6.0)
+                   * smoothstep(-1.4, 0.3, lx / sc);
         float behind = smoothstep(0.6, -0.4, lx);
         float spread = (-lx) * 0.55 + 0.35;
-        float vband = exp(-pow(abs(lz) - spread * 0.75, 2.0) * 8.0);
-        float nearPatch = smoothstep(1.6 * uBoatScale, 0.2, length(d));
-        float distFade = smoothstep(5.0, 1.2, length(d));
-        float f3 = (vband + nearPatch * 0.9) * behind * distFade * uBoatScale;
-        f3 *= smoothstep(0.55, 0.65, shapeN + (detailN - 0.5) * 0.4 + nearPatch * 0.5);
+        float vband = exp(-pow(abs(lz) - spread * 0.75, 2.0) * 8.0) * behind;
 
-        float foam = clamp(f1 + f3 * uFoamWake, 0.0, 1.0) * uFoamStrength;
-        foam = clamp(foam, 0.0, 1.0);
+        float distFade = smoothstep(5.5, 1.2, dl);
+        float ship = (hullRing * 1.15 + bowV * 0.9 + vband) * distFade * sc;
+        ship *= smoothstep(0.34, 0.58,
+                           shapeN + (detailN - 0.5) * 0.5 + hullRing * 0.9 + bowV * 0.6);
 
-        // 厚泡沫：接近纯白的团块，团内按形状噪声留一点水色阴影
-        vec3 foamCol = vec3(0.99, 0.99, 0.97) * (0.9 + 0.1 * shapeN);
+        float foam = clamp((f1 + ship * uFoamWake) * uFoamStrength, 0.0, 1.0);
+
+        // 泡沫不是纯白贴片：混入一点水色、用高频噪声咬出细孔，呈"沸腾"质感
+        vec3 foamCol = mix(vec3(0.99, 0.99, 0.97), col, 0.16) * (0.88 + 0.14 * froth);
+        foam *= 0.70 + 0.30 * smoothstep(0.25, 0.75, froth);
         col = mix(col, foamCol, foam * 0.95);
         // 泡沫不跟着水膜一起变透明，否则会透出下面的鱼
-        alpha = max(alpha, foam * 0.9);
+        alpha = max(alpha, foam * 0.92);
       }
+
+      // 水与玻璃交界的弯月面亮边
+      float rr = length(p) / uRadius;
+      float edge = smoothstep(0.88, 0.995, rr);
+      col = mix(col, vec3(0.94, 0.995, 0.97), edge * uFoamEdge);
+      alpha = max(alpha, edge * uFoamEdge * 0.45);
     } else {
       // ---------- 水下仰视视角：默认全透明透出天空盒，不透明度可在控制面板调节 ----------
       col = uSkyColor;
@@ -346,7 +382,7 @@ export function createAquarium() {
     fragmentShader: waterFragment
   });
   // 上沿高出水面盖住波浪起伏，下沿沉进底座避免露缝
-  const overlapTop = 0.4;
+  const overlapTop = 0.85;
   const sinkBottom = 0.3;
   const waterTop = TANK.waterTopY + overlapTop;
   const waterBottom = TANK.waterBottomY - sinkBottom;
@@ -373,21 +409,22 @@ export function createAquarium() {
       uSkyColor: { value: new THREE.Color(0xbfeae6) },
       uSunDir: { value: sunDir },
       uTime: { value: 0 },
-      uWaveAmp: { value: 0.26 },
+      uWaveAmp: { value: 0.36 },
       uRadius: { value: TANK.waterRadius },
       uWaterTopY: { value: TANK.waterTopY },
-      uOpacity: { value: 0.55 },
+      uOpacity: { value: 0.62 },
       uUnderAlpha: { value: 0.0 },
       // 泡沫
       uFoamOn: { value: 1 },
-      uFoamStrength: { value: 0.88 },
-      uFoamScale: { value: 2 },
+      uFoamStrength: { value: 0.9 },
+      uFoamScale: { value: 3.5 },
       uFoamWake: { value: 1.0 },
+      uFoamEdge: { value: 0.35 },
       uBoatPos: { value: new THREE.Vector2(-1.8, 0.6) },
       uBoatDir: { value: new THREE.Vector2(Math.cos(0.5), -Math.sin(0.5)) },
       uBoatScale: { value: 1.0 },
       // 分层开关
-      uLNormOn: { value: 0 },
+      uLNormOn: { value: 1 },
       uLDiffOn: { value: 1 },
       uLColorOn: { value: 0 },
       uLReliefOn: { value: 1 },
@@ -395,15 +432,16 @@ export function createAquarium() {
       uLFresOn: { value: 1 },
       uLSpecOn: { value: 1 },
       uLSheenOn: { value: 1 },
-      uRipple: { value: 0.26 },
+      uRipple: { value: 0.36 },
       uSunDiff: { value: 0 },
-      uSpecSharp: { value: 80 },
-      uSpecWideSharp: { value: 120 },
-      uSpecInt: { value: 1.94 },
-      uSpecWideInt: { value: 0.26 },
-      uSheenColor: { value: new THREE.Color(0xeef9f4) },
-      uSheenSharp: { value: 6 },
-      uSheenInt: { value: 0.6 }
+      // 窄瓣：波光闪点；宽瓣：柔和反光（指数远小于窄瓣 → 大面积软光而非硬块）
+      uSpecSharp: { value: 110 },
+      uSpecWideSharp: { value: 22 },
+      uSpecInt: { value: 1.05 },
+      uSpecWideInt: { value: 0.34 },
+      uSheenColor: { value: new THREE.Color(0xdff3ec) },
+      uSheenSharp: { value: 5 },
+      uSheenInt: { value: 0.42 }
     },
     vertexShader: surfaceVertex,
     fragmentShader: surfaceFragment
