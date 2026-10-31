@@ -1,0 +1,13 @@
+/* The SDK reports CSS pixels. Without it, regular browser sizing still applies. */
+#app {
+  width: var(--toy-viewport-width, 100%);
+  height: var(--toy-viewport-height, 100%);
+  max-width: 480px;
+  max-height: 100%;
+}
+footer {
+  left: calc(16px + var(--safe-area-inset-left, env(safe-area-inset-left, 0px)));
+  right: calc(16px + var(--safe-area-inset-right, env(safe-area-inset-right, 0px)));
+}
+.view-tools { right: calc(15px + var(--safe-area-inset-right, env(safe-area-inset-right, 0px))); }
+#toast { top: calc(65px + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))); }

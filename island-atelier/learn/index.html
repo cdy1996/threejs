@@ -1,0 +1,1539 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>岛屿建造 · 地形生成互动教学</title>
+<style>
+:root{
+  --bg:#0a0f1a; --panel:#101826; --panel2:#0d1420; --line:#1e2c42; --line2:#263859;
+  --tx:#dbe6f5; --dim:#8ea3c0; --faint:#5b6f8c;
+  --cyan:#56d4dd; --teal:#2dd4bf; --amber:#f5b84b; --coral:#f07f6b; --violet:#a78bfa; --green:#7bc96f;
+  --kai:"STKaiti","KaiTi","KaiTi_GB2313","SimSun",serif;
+  --mono:"Cascadia Code","JetBrains Mono",Consolas,"Courier New",monospace;
+  --sans:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scrollbar-color:#2a3c58 var(--bg)}
+body{background:var(--bg);color:var(--tx);font-family:var(--sans);font-size:14.5px;line-height:1.75;
+  display:grid;grid-template-columns:236px 1fr;grid-template-rows:58px 1fr;min-height:100vh}
+::selection{background:rgba(86,212,221,.25)}
+
+/* ─── 顶栏 ─── */
+header{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 22px;
+  background:linear-gradient(180deg,#0e1626,#0a0f1a);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50}
+header .logo{font-family:var(--kai);font-size:21px;color:var(--cyan);letter-spacing:1px;white-space:nowrap}
+header .logo small{font-family:var(--sans);font-size:11.5px;color:var(--faint);margin-left:10px;letter-spacing:0}
+header .sp{flex:1}
+header .progress{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--dim);white-space:nowrap}
+header .bar{width:150px;height:6px;border-radius:3px;background:#16233a;overflow:hidden}
+header .bar i{display:block;height:100%;width:0;border-radius:3px;background:linear-gradient(90deg,var(--teal),var(--cyan));transition:width .35s}
+.kbd{font-family:var(--mono);font-size:11px;background:#16233a;border:1px solid var(--line2);border-bottom-width:2px;
+  border-radius:5px;padding:1px 6px;color:var(--dim)}
+
+/* ─── 侧栏 ─── */
+nav{grid-row:2;background:var(--panel2);border-right:1px solid var(--line);padding:18px 12px;position:sticky;top:58px;height:calc(100vh - 58px);overflow:auto}
+nav .nt{font-size:11px;color:var(--faint);letter-spacing:2px;margin:4px 8px 10px}
+nav a{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:9px;color:var(--dim);text-decoration:none;
+  font-size:13.5px;line-height:1.45;margin-bottom:2px;border:1px solid transparent;transition:.15s}
+nav a .no{flex:none;width:20px;height:20px;border-radius:6px;background:#16233a;color:var(--faint);font-family:var(--mono);
+  font-size:11px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+nav a:hover{background:#122036;color:var(--tx)}
+nav a.on{background:#12283a;border-color:#1d4a5c;color:var(--cyan)}
+nav a.on .no{background:var(--cyan);color:#04222b;font-weight:700}
+nav a.done .no{background:#173a2a;color:var(--green)}
+nav .foot{margin:18px 8px 4px;padding-top:14px;border-top:1px solid var(--line);font-size:11.5px;color:var(--faint);line-height:1.7}
+
+/* ─── 主区 ─── */
+main{grid-row:2;padding:34px 44px 60px;max-width:1080px}
+.step{display:none;animation:fade .3s ease}
+.step.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+h1{font-family:var(--kai);font-size:30px;font-weight:600;letter-spacing:1px;margin-bottom:6px}
+h1 .en{display:block;font-family:var(--mono);font-size:12px;color:var(--faint);letter-spacing:2.5px;margin-top:2px}
+h2{font-family:var(--kai);font-size:25px;font-weight:600;margin-bottom:4px}
+h2 .en{display:block;font-family:var(--mono);font-size:11.5px;color:var(--faint);letter-spacing:2px;font-weight:400;margin-top:1px}
+h3{font-size:15.5px;color:var(--cyan);margin:26px 0 10px;font-weight:600}
+h3::before{content:"▸ ";color:var(--faint)}
+p{margin:9px 0;color:#c4d2e6}
+p .hl,li .hl{color:var(--amber)}
+strong{color:var(--tx)}
+.lead{color:var(--dim);font-size:13.5px;margin-bottom:18px}
+.goal{background:linear-gradient(90deg,rgba(45,212,191,.09),rgba(45,212,191,.02));border:1px solid #1d4a44;
+  border-radius:10px;padding:12px 16px;margin:16px 0 22px;font-size:13.5px;color:#b8e6de}
+.goal b{color:var(--teal)}
+ul,ol{margin:8px 0 8px 22px;color:#c4d2e6}
+li{margin:4px 0}
+li::marker{color:var(--faint)}
+
+/* ─── 代码块 ─── */
+pre.code{background:#0b1220;border:1px solid var(--line);border-radius:10px;padding:13px 16px;overflow:auto;
+  font-family:var(--mono);font-size:12.3px;line-height:1.7;margin:12px 0;color:#b9c8e2}
+pre.code .cm{color:#5f7d9c}
+pre.code .hl{color:#ffd479;background:rgba(245,184,75,.07);border-radius:2px}
+pre.code .kw{color:#7dd3fc}
+pre.code .fn{color:#c4b5fd}
+pre.code .num{color:#f0a35e}
+pre.code .src{color:#4d6484;font-size:11px;display:block;margin-bottom:6px;letter-spacing:.5px}
+.formula{font-family:var(--mono);background:#0b1220;border:1px dashed var(--line2);border-radius:9px;
+  padding:10px 16px;margin:12px 0;color:#a9e8ef;font-size:13px;text-align:center;letter-spacing:.3px}
+.fig{margin:14px 0;padding:16px 18px 12px;background:var(--panel2);border:1px solid var(--line);border-radius:12px}
+.fig svg{width:100%;height:auto;display:block}
+.fig figcaption{margin-top:10px;padding-top:10px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint);line-height:1.65}
+
+/* ─── 演示台 ─── */
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin:16px 0}
+.panel>.pt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.panel>.pt .t{font-family:var(--kai);font-size:16.5px;color:var(--tx)}
+.panel>.pt .tag{font-family:var(--mono);font-size:10.5px;color:var(--violet);border:1px solid #3d3160;border-radius:20px;padding:1px 9px}
+.panel>.pt .sp{flex:1}
+.btn{font-family:var(--sans);font-size:12.5px;color:var(--dim);background:#16233a;border:1px solid var(--line2);
+  border-radius:8px;padding:5px 13px;cursor:pointer;transition:.15s;white-space:nowrap}
+.btn:hover{color:var(--tx);border-color:#38507a;background:#1b2c48}
+.btn.pri{color:#062a30;background:linear-gradient(180deg,#5fdde6,#35b8c6);border-color:#35b8c6;font-weight:600}
+.btn.pri:hover{filter:brightness(1.1)}
+.btn.on{color:var(--cyan);border-color:#2b6a75;background:#12303c}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.hint{font-size:12px;color:var(--faint)}
+.hint b{color:var(--dim);font-weight:600}
+canvas.demo{display:block;width:100%;border-radius:10px;background:#0b1220;border:1px solid var(--line);touch-action:none}
+.row{display:flex;gap:14px;flex-wrap:wrap}
+.row>*{flex:1 1 0;min-width:0}
+.ctl{display:flex;align-items:center;gap:9px;margin:9px 0;font-size:12.5px;color:var(--dim);flex-wrap:wrap}
+.ctl label{white-space:nowrap}
+.ctl output{font-family:var(--mono);color:var(--amber);font-size:12px;min-width:52px;text-align:right}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;min-width:110px;height:5px;border-radius:3px;
+  background:linear-gradient(90deg,var(--teal),#1d3a5c);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:#e8f6f8;border:2px solid var(--teal);cursor:pointer;box-shadow:0 0 8px rgba(45,212,191,.5)}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:#e8f6f8;border:2px solid var(--teal);cursor:pointer}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.chip{background:#0e1928;border:1px solid var(--line);border-radius:9px;padding:7px 13px;font-size:12px;color:var(--dim)}
+.chip b{display:block;font-family:var(--mono);font-size:16px;color:var(--cyan);font-weight:600;line-height:1.3}
+.chip.warn b{color:var(--coral)}
+.readout{font-family:var(--mono);font-size:12px;color:var(--amber);background:#0e1928;border:1px solid var(--line);
+  border-radius:8px;padding:6px 12px;display:inline-block}
+.readout.neg{color:var(--coral)}
+.readout.pos{color:var(--green)}
+.note{background:#0e1928;border-left:3px solid var(--amber);border-radius:0 9px 9px 0;padding:10px 15px;margin:12px 0;
+  font-size:13px;color:#cbb88a}
+.note.warn{border-color:var(--coral);color:#e5b7ab}
+.note.ok{border-color:var(--green);color:#a9d8a0}
+.note b{color:var(--tx)}
+table.cmp{width:100%;border-collapse:collapse;margin:14px 0;font-size:12.8px}
+table.cmp th,table.cmp td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+table.cmp th{background:#122036;color:var(--cyan);font-weight:600}
+table.cmp td{color:#b9c8e2}
+table.cmp td:first-child{color:var(--dim);white-space:nowrap}
+table.cmp tr td:first-child{background:#0d1524}
+
+/* ─── 步骤 1：格网编辑器 ─── */
+#grid{display:grid;grid-template-columns:repeat(11,1fr);gap:3px;background:#0b1220;border:1px solid var(--line);
+  border-radius:10px;padding:8px;touch-action:none;user-select:none}
+#grid .cell{aspect-ratio:1;border-radius:4px;background:#101c30;border:1px solid #182742;display:flex;
+  align-items:center;justify-content:center;font-family:var(--mono);font-size:10.5px;color:#04101c;cursor:pointer;transition:.08s}
+#grid .cell:hover{outline:1px solid var(--cyan)}
+#grid .cell.sea{color:#22385c}
+.jsonbox{font-family:var(--mono);font-size:11.5px;line-height:1.65;color:#8fb0a8;background:#0b1220;border:1px solid var(--line);
+  border-radius:10px;padding:10px 13px;height:172px;overflow:auto;white-space:pre}
+.demo-grid{display:grid;grid-template-columns:300px 1fr;gap:16px;align-items:start}
+@media(max-width:760px){.demo-grid{grid-template-columns:1fr}}
+
+/* ─── 步骤 0 流水线图 ─── */
+.pipe{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:10px 6px 4px;margin:16px 0}
+.pipe svg{width:100%;height:auto;display:block}
+.pnode{cursor:pointer}
+.pnode rect.box{fill:#101826;stroke:var(--line2);stroke-width:1.2;transition:.15s}
+.pnode:hover rect.box{stroke:var(--cyan);filter:drop-shadow(0 0 6px rgba(86,212,221,.35))}
+.pnode text{pointer-events:none}
+.flowline{stroke-dasharray:5 6;animation:flow 1.2s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-22}}
+.numcards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0}
+@media(max-width:760px){.numcards{grid-template-columns:repeat(2,1fr)}}
+.numcards .n{background:#0e1928;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.numcards .n b{display:block;font-family:var(--mono);font-size:18px;color:var(--teal);line-height:1.35}
+.numcards .n span{font-size:11.5px;color:var(--faint)}
+.numcards .n i{display:block;font-style:normal;font-size:11px;color:var(--faint);font-family:var(--mono);margin-top:2px}
+
+/* ─── 步骤 7 3D ─── */
+#scene3d{width:100%;height:480px;border-radius:10px;border:1px solid var(--line);background:#0b1220;display:block;touch-action:none;cursor:crosshair}
+.stats3d{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--dim);margin:8px 0}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+/* ─── 步骤导航 ─── */
+.stepnav{display:flex;justify-content:space-between;margin-top:44px;padding-top:22px;border-top:1px solid var(--line)}
+footer{grid-column:1/-1;border-top:1px solid var(--line);padding:20px 44px;color:var(--faint);font-size:12px;line-height:1.9}
+footer b{color:var(--dim)}
+footer code{font-family:var(--mono);color:#7f95b8;background:#0e1928;padding:1px 6px;border-radius:4px;font-size:11px}
+.refs{margin-top:8px}
+.refs li{margin:2px 0}
+@media(max-width:900px){
+  body{grid-template-columns:1fr;grid-template-rows:58px auto 1fr}
+  nav{grid-row:2;position:static;height:auto;display:flex;gap:6px;overflow-x:auto;border-right:none;border-bottom:1px solid var(--line);padding:10px}
+  nav .nt,nav .foot{display:none}
+  nav a{flex:none;align-items:center;padding:7px 11px;white-space:nowrap}
+  main{grid-row:3;padding:24px 18px 40px}
+  footer{padding:18px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🏝️ 岛屿建造 · 地形生成互动教学<small>Island Atelier · SDF Terrain step by step</small></div>
+  <div class="sp"></div>
+  <div class="progress"><span id="pgText">第 1 / 8 步</span><span class="bar"><i id="pgBar"></i></span><span class="kbd">← →</span></div>
+</header>
+
+<nav id="nav">
+  <div class="nt">目 录</div>
+  <a href="#" data-go="0" class="on"><span class="no">0</span><span>总览 · 地形流水线<br><small style="color:var(--faint)">六步管道与关键数字</small></span></a>
+  <a href="#" data-go="1"><span class="no">1</span><span>数据模型 · cells 高度格<br><small style="color:var(--faint)">整个小岛就是一个字典</small></span></a>
+  <a href="#" data-go="2"><span class="no">2</span><span>单格形状 · 圆角盒距离场<br><small style="color:var(--faint)">SDF 与「面距 &gt; 半格距」</small></span></a>
+  <a href="#" data-go="3"><span class="no">3</span><span>自动连接 · smin 平滑并集<br><small style="color:var(--faint)">折角变圆角、缝隙搭桥</small></span></a>
+  <a href="#" data-go="4"><span class="no">4</span><span>有机化 · 域扭曲与高斯模糊<br><small style="color:var(--faint)">抹掉「格感」的两道工序</small></span></a>
+  <a href="#" data-go="5"><span class="no">5</span><span>抬高地形 · 层叠等高线<br><small style="color:var(--faint)">h++ 就是把 SDF 多灌一层</small></span></a>
+  <a href="#" data-go="6"><span class="no">6</span><span>从场到网格 · 网格化与群系<br><small style="color:var(--faint)">113² 采样与顶点色</small></span></a>
+  <a href="#" data-go="7"><span class="no">7</span><span>实战 · 3D 造岛<br><small style="color:var(--faint)">真实模块驱动的完整小岛</small></span></a>
+  <div class="foot">源码基准<br><code style="font-family:var(--mono);font-size:10.5px">island-atelier/js/terrain.js</code><br>与本页同目录 <code style="font-family:var(--mono);font-size:10.5px">js/teach-field.js</code></div>
+</nav>
+
+<main>
+<noscript><div class="note warn">本教学页需要启用 JavaScript。</div></noscript>
+
+<!-- ═══════════ 步骤 0 ═══════════ -->
+<section class="step on" id="step-0">
+  <h1>总览 · 地形生成流水线<span class="en">PIPELINE OVERVIEW</span></h1>
+  <p class="lead">「🏝️岛屿建造」不是 tilemap，而是<strong>可编辑高度格 + 分层 SDF 平滑并集</strong>。先建立全图，再逐站拆解。</p>
+
+  <div class="goal"><b>本页目标：</b>看懂整条地形管道——从你点下的每一格，到屏幕上 4058 个三角形的岛，中间经过了哪 6 道工序，每道工序解决什么问题。点击下图任意节点可跳转到对应步骤。</div>
+
+  <div class="pipe">
+    <svg viewBox="0 0 940 236" role="img" aria-label="地形生成流水线">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="#3d5a80"/>
+        </marker>
+      </defs>
+      <!-- 节点 -->
+      <g class="pnode" data-go="1">
+        <rect class="box" x="14" y="52" width="132" height="86" rx="11"/>
+        <circle cx="34" cy="72" r="10" fill="#1d4a5c"/><text x="34" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#56d4dd">01</text>
+        <text x="52" y="76" font-size="14.5" fill="#dbe6f5" font-family="STKaiti,KaiTi,SimSun,serif">cells 高度格</text>
+        <text x="26" y="98" font-size="10.5" fill="#8ea3c0">{x,z,h,green} 字典</text>
+        <text x="26" y="114" font-size="10" fill="#4d6484" font-family="monospace">app.js:44 · 67-80</text>
+      </g>
+      <g class="pnode" data-go="2">
+        <rect class="box" x="170" y="52" width="132" height="86" rx="11"/>
+        <circle cx="190" cy="72" r="10" fill="#1d4a5c"/><text x="190" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#56d4dd">02</text>
+        <text x="208" y="76" font-size="14.5" fill="#dbe6f5" font-family="STKaiti,KaiTi,SimSun,serif">圆角盒距离场</text>
+        <text x="182" y="98" font-size="10.5" fill="#8ea3c0">每格一个 2D 圆角盒 SDF</text>
+        <text x="182" y="114" font-size="10" fill="#4d6484" font-family="monospace">terrain.js:23-24</text>
+      </g>
+      <g class="pnode" data-go="3">
+        <rect class="box" x="326" y="52" width="132" height="86" rx="11"/>
+        <circle cx="346" cy="72" r="10" fill="#1d4a5c"/><text x="346" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#56d4dd">03</text>
+        <text x="364" y="76" font-size="14.5" fill="#dbe6f5" font-family="STKaiti,KaiTi,SimSun,serif">smin 平滑并集</text>
+        <text x="338" y="98" font-size="10.5" fill="#8ea3c0">相邻格的场自动融合</text>
+        <text x="338" y="114" font-size="10" fill="#4d6484" font-family="monospace">terrain.js:8 · 26</text>
+      </g>
+      <g class="pnode" data-go="4">
+        <rect class="box" x="482" y="52" width="132" height="86" rx="11"/>
+        <circle cx="502" cy="72" r="10" fill="#1d4a5c"/><text x="502" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#56d4dd">04</text>
+        <text x="520" y="76" font-size="14.5" fill="#dbe6f5" font-family="STKaiti,KaiTi,SimSun,serif">扭曲 + 高斯</text>
+        <text x="494" y="98" font-size="10.5" fill="#8ea3c0">轮廓有机化，抹掉格感</text>
+        <text x="494" y="114" font-size="10" fill="#4d6484" font-family="monospace">terrain.js:20 · 37-43</text>
+      </g>
+      <g class="pnode" data-go="5">
+        <rect class="box" x="638" y="52" width="132" height="86" rx="11"/>
+        <circle cx="658" cy="72" r="10" fill="#1d4a5c"/><text x="658" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#56d4dd">05</text>
+        <text x="676" y="76" font-size="14.5" fill="#dbe6f5" font-family="STKaiti,KaiTi,SimSun,serif">高度累加</text>
+        <text x="650" y="98" font-size="10.5" fill="#8ea3c0">smoothstep 叠成梯田</text>
+        <text x="650" y="114" font-size="10" fill="#4d6484" font-family="monospace">terrain.js:51-53</text>
+      </g>
+      <g class="pnode" data-go="6">
+        <rect class="box" x="794" y="52" width="132" height="86" rx="11"/>
+        <circle cx="814" cy="72" r="10" fill="#1d4a5c"/><text x="814" y="76" text-anchor="middle" font-size="11" font-family="monospace" fill="#56d4dd">06</text>
+        <text x="832" y="76" font-size="14.5" fill="#dbe6f5" font-family="STKaiti,KaiTi,SimSun,serif">网格化 + 群系</text>
+        <text x="806" y="98" font-size="10.5" fill="#8ea3c0">113² 采样，顶点色上岛</text>
+        <text x="806" y="114" font-size="10" fill="#4d6484" font-family="monospace">app.js:165-189</text>
+      </g>
+      <!-- 连线 -->
+      <line x1="146" y1="95" x2="166" y2="95" stroke="#3d5a80" stroke-width="1.6" marker-end="url(#arr)"/>
+      <line x1="302" y1="95" x2="322" y2="95" stroke="#3d5a80" stroke-width="1.6" marker-end="url(#arr)"/>
+      <line x1="458" y1="95" x2="478" y2="95" stroke="#3d5a80" stroke-width="1.6" marker-end="url(#arr)"/>
+      <line x1="614" y1="95" x2="634" y2="95" stroke="#3d5a80" stroke-width="1.6" marker-end="url(#arr)"/>
+      <line x1="770" y1="95" x2="790" y2="95" stroke="#3d5a80" stroke-width="1.6" marker-end="url(#arr)"/>
+      <line x1="926" y1="95" x2="936" y2="95" stroke="#3d5a80" stroke-width="1.6" marker-end="url(#arr)"/>
+      <text x="931" y="82" font-size="10" fill="#4d6484" font-family="monospace" text-anchor="end">THREE.Mesh</text>
+      <!-- 输入输出 -->
+      <text x="80" y="42" font-size="10.5" fill="#5b6f8c" font-family="monospace" text-anchor="middle">你点下的每一格</text>
+      <text x="860" y="42" font-size="10.5" fill="#5b6f8c" font-family="monospace" text-anchor="middle">屏幕上的岛</text>
+      <!-- 回路 -->
+      <path d="M 860 138 C 860 190, 80 190, 80 138" fill="none" stroke="#2b6a75" stroke-width="1.4" stroke-dasharray="5 6" class="flowline" marker-end="url(#arr)"/>
+      <text x="470" y="186" font-size="11" fill="#2b6a75" text-anchor="middle" font-family="STKaiti,KaiTi,SimSun,serif">每一次抬升 / 压低，整条管道重跑一遍（拖拽时降采样草稿，松手才上全分辨率）</text>
+      <text x="470" y="214" font-size="10.5" fill="#4d6484" text-anchor="middle" font-family="monospace">draft N=80 → final N=112（app.js:165）</text>
+    </svg>
+  </div>
+
+  <h3>记住这 8 个数字</h3>
+  <div class="numcards">
+    <div class="n"><b>1.325</b><span>STEP 格距</span><i>世界坐标 = 格坐标 × 1.325</i></div>
+    <div class="n"><b>0.44</b><span>圆角半径</span><i>terrain.js:24 的 - .44</i></div>
+    <div class="n"><b>0.7925</b><span>面距 = 0.3525 + 0.44</span><i>&gt; STEP/2 = 0.6625 ⇒ 必然重叠</i></div>
+    <div class="n"><b>0.72</b><span>smin 混合半径 k</span><i>terrain.js:26</i></div>
+    <div class="n"><b>1.34</b><span>第 0 层海滩抬升</span><i>terrain.js:51</i></div>
+    <div class="n"><b>0.86</b><span>之上每层抬升</span><i>terrain.js:52 ⇒ 梯田</i></div>
+    <div class="n"><b>97²</b><span>标量层分辨率</span><i>RES=96 + 边界（terrain.js:31）</i></div>
+    <div class="n"><b>113²</b><span>地形网格分辨率</span><i>N=112, span=22（app.js:165）</i></div>
+  </div>
+
+  <h3>为什么「自动连接」不需要拼接瓦片</h3>
+  <p>传统 tilemap 的自动拼接（autotile）靠<strong>查表</strong>：看四邻居是否存在，用 4 位掩码去图集里选对应变体，瓦片之间靠美工保证无缝。本项目走的是另一条路——把每格变成一个<strong>距离场</strong>，两个场用 <span class="hl">smin</span>（平滑最小值）取并集，相邻格的轮廓在数学上自动融合成一条连续光滑的海岸线，<strong>零贴图、零拼接规则</strong>。三条路线的取舍：</p>
+  <table class="cmp">
+    <tr><th style="width:96px">维度</th><th>SDF 平滑并集（本项目）</th><th>bitmask 自动瓦片</th><th>Marching Squares</th></tr>
+    <tr><td>连接质量</td><td>完全光滑，颈部可调</td><td>取决于美工，斜角需 Wang 角片</td><td>分段线性光滑</td></tr>
+    <tr><td>资源需求</td><td>零贴图，纯代码</td><td>16 片（4-bit）或 47 片（8-bit blob）图集</td><td>零</td></tr>
+    <tr><td>运行成本</td><td>每次编辑重算 97² × 层数标量场</td><td>每格一次查表，最便宜</td><td>每格查 16 案例表</td></tr>
+    <tr><td>最适合</td><td>3D 造岛 / 黏土风连续地形</td><td>2D 像素 / 战术地图</td><td>2D 矢量地形 / 液体</td></tr>
+  </table>
+
+  <div class="note ok"><b>学习路径建议：</b>步骤 1 → 2 → 3 是「连接」的主线（数据 → 单格形状 → 并集）；步骤 4 → 5 是「质感与高度」；步骤 6 收口到渲染；步骤 7 用真实模块把整条管道跑起来，随手验证前面每一课。</div>
+
+  <div class="stepnav">
+    <span></span>
+    <button class="btn pri" data-go="1">下一章：数据模型 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 1 ═══════════ -->
+<section class="step" id="step-1">
+  <h1>数据模型 · cells 高度格<span class="en">STEP 1 · THE DATA MODEL</span></h1>
+  <p class="lead">整个小岛就是一个字典：格子坐标 → 高度层数。地形的一切秘密都藏在 <code style="font-family:var(--mono);color:#7dd3fc">h</code> 这一个整数里。</p>
+
+  <div class="goal"><b>本页目标：</b>理解 cells 数据结构；在左边的格网上亲手抬升 / 压低，看右边 JSON 与实时预览如何联动——预览用的就是复刻工程里的<strong>真实 terrain.js</strong>。</div>
+
+  <h3>1.1 全部家当</h3>
+  <pre class="code"><span class="src">app.js:44 · 主程序的状态</span><span class="kw">var</span> cells = {}, seed = <span class="num">24</span>, density = <span class="num">.72</span>;
+<span class="cm">// cells: "x,z" -> {x, z, h, green}
+//   x, z   格坐标；世界坐标 = 格坐标 × STEP（1.325）
+//   h      高度层数 1~8：raise 就是 h++，lower 就是 h--，h 归零删格
+//   green  有没有草皮：只影响装饰（棕榈/草簇），不影响地形形状</span>
+
+<span class="src">app.js:54 · 存档 = 序列化 JSON，读档 = 反序列化</span><span class="kw">function</span> <span class="fn">snapshot</span>(){ <span class="kw">return</span> JSON.<span class="fn">stringify</span>({cells:cells, seed:seed, density:density}); }</pre>
+  <p>注意这里<strong>没有</strong>二维数组、没有瓦片 ID、没有图集索引——一个字典 + 每格四个字段，就是全部地形状态。这也意味着存档天然可 JSON 化、可撤销（快照入栈，<code style="font-family:var(--mono);color:#7dd3fc">app.js:61</code>）。</p>
+
+  <h3>1.2 初始岛从哪来：径向函数</h3>
+  <pre class="code"><span class="src">app.js:67-80 · makeIsland：用椭圆半径 + 几个圆域决定每格高度</span><span class="kw">for</span>(<span class="kw">var</span> x=-<span class="num">5</span>; x&lt;=5; x++) <span class="kw">for</span>(<span class="kw">var</span> z=-5; z&lt;=5; z++){
+  <span class="kw">var</span> r = Math.sqrt(x*x*<span class="num">.88</span> + z*z*<span class="num">1.08</span>),          <span class="cm">// 椭圆半径</span>
+      edge = <span class="num">4.15</span> + <span class="fn">rand</span>(x*<span class="num">41</span>+z*<span class="num">31</span>)*<span class="num">.9</span>;            <span class="cm">// 海岸半径带噪声狗啃</span>
+  <span class="kw">if</span>(r &gt; edge) <span class="kw">continue</span>;                          <span class="cm">// 圈外不留格</span>
+  <span class="kw">var</span> h = <span class="num">1</span>;
+  <span class="kw">if</span>(r &lt; <span class="num">3.8</span>) h = <span class="num">2</span>;                              <span class="cm">// 内圈两层台地</span>
+  <span class="kw">if</span>((x+1)*(x+1)+(z+1.3)*(z+1.3) &lt; <span class="num">8.2</span>) h = <span class="num">4</span>;       <span class="cm">// 左上一片四层高地</span>
+  <span class="hl">if</span>((x+1.8)*(x+1.8)+(z+2.4)*(z+2.4) &lt; <span class="num">1.8</span>) h = <span class="num">6</span>;       <span class="cm">// 主峰六层</span>
+  <span class="kw">if</span>(<span class="fn">rand</span>(x*9+z*141) &gt; .87 &amp;&amp; r &gt; <span class="num">3.5</span>) <span class="kw">continue</span>;         <span class="cm">// 海岸随机缺口</span>
+  cells[key(x,z)] = {x:x, z:z, h:h, green:<span class="num">1</span>};
+}
+cells[<span class="str">'5,2'</span>]={x:5,z:2,h:1,green:1};  <span class="cm">// 两格刻意远离主岛的"跳板"</span>
+cells[<span class="str">'-4,4'</span>]={x:-4,z:4,h:1,green:1};</pre>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 1 · 格网编辑器</span><span class="tag">真实 terrain.js 实时预览</span><span class="sp"></span>
+      <button class="btn" id="s1-init">初始岛</button><button class="btn" id="s1-one">只放一格</button><button class="btn" id="s1-clear">清空</button>
+    </div>
+    <p class="hint"><b>左键</b>点击/拖拽 = 抬高（无格则新建 h=1，上限 8 层）· <b>右键</b> = 压低（h 归零删格）。右侧预览由 <b>js/terrain.js</b>（原版模块）实时计算。</p>
+    <div class="demo-grid">
+      <div id="grid"></div>
+      <div>
+        <div class="chips">
+          <div class="chip"><b id="s1-count">0</b>格子数</div>
+          <div class="chip"><b id="s1-max">0</b>最高层</div>
+          <div class="chip"><b id="s1-sum">0</b>总层数</div>
+          <div class="chip"><b id="s1-green">0</b>带草皮</div>
+        </div>
+        <canvas id="s1-preview" class="demo" style="height:250px"></canvas>
+        <div class="legend"><span><i style="background:#1d5f9e"></i>水面 water</span><span><i style="background:#e9d7a6"></i>沙滩 sand</span><span><i style="background:#93b949"></i>草甸 meadow</span><span><i style="background:#8d9c95"></i>崖石 cliff</span></div>
+      </div>
+    </div>
+    <div class="jsonbox" id="s1-json">cells = {}</div>
+  </div>
+
+  <div class="note"><b>观察要点：</b>① 两格 <code style="font-family:var(--mono)">h</code> 相同不意味着高度相同——最终高度由 SDF 决定，邻居会把它"吸"起来或压下去；② <code style="font-family:var(--mono)">green</code> 只决定长不长草，关掉草皮地形形状丝毫不变；③ 预览里的岛无论格网多方，轮廓都是光滑的——因为预览和游戏用的是同一个 <code style="font-family:var(--mono)">IslandTerrain.create()</code>，这就是下一步要拆的黑盒。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="0">← 总览</button>
+    <button class="btn pri" data-go="2">下一章：单格距离场 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 2 ═══════════ -->
+<section class="step" id="step-2">
+  <h1>单格形状 · 圆角盒距离场<span class="en">STEP 2 · ROUNDED-BOX SDF</span></h1>
+  <p class="lead">每一格在数学上是一个<strong>带圆角的方块</strong>。距离场（SDF）上，格子内部为负、边界为零、外部为正——负得越深，离边界越远。</p>
+
+  <div class="goal"><b>本页目标：</b>亲手算一遍圆角盒距离场；理解为什么「面距 0.7925 &gt; 半格距 0.6625」是相邻格能连上的<strong>物理基础</strong>。</div>
+
+  <h3>2.1 一行代码，一个格子</h3>
+  <pre class="code"><span class="src">terrain.js:23-24 · 每格先算出圆角盒距离场，再按层数灌进各标量层</span><span class="kw">var</span> c = nearby[i], core = STEP*<span class="num">.5</span> - <span class="num">.31</span>;          <span class="cm">// core = 0.3525，内核半宽</span>
+<span class="kw">var</span> qx = Math.abs(wx - c.x*STEP) - core,                <span class="cm">// 到格心的横向偏移，扣掉内核</span>
+    qz = Math.abs(wz - c.z*STEP) - core;
+<span class="hl"><span class="kw">var</span> d = Math.sqrt(Math.max(qx,0)*Math.max(qx,0) + Math.max(qz,0)*Math.max(qz,0))
+        + Math.min(Math.max(qx,qz),0) - <span class="num">.44</span>;                        <span class="cm">// - .44 即圆角半径</span></span></pre>
+  <p>这是 Inigo Quilez 的圆角盒标准形式，拆开看：</p>
+  <div class="formula">d = ‖max(q, 0)‖₂ + min(max(qx, qz), 0) − r　　（q = |p − 格心| − core，r = 0.44）</div>
+
+  <figure class="fig">
+<svg viewBox="0 0 680 462" width="100%" role="img" xmlns="http://www.w3.org/2000/svg" font-family="'PingFang SC','Microsoft YaHei',sans-serif">
+<title>圆角盒距离场（rounded-box SDF）公式图解</title>
+<desc>左侧俯视图：一格的身体由内核矩形向外扩张半径 r 形成圆角边界，格外点 P 演示到矩形边的欧氏距离分解，格内点 Q 演示负的嵌入深度；右侧剖面图：沿格心水平线的场值 d，格内为常数负值、边界处为零、格外为正；底部三张卡片归纳公式三项各自的生效区域。</desc>
+<defs>
+  <marker id="ax" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+    <path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </marker>
+</defs>
+
+<text x="44" y="50" font-size="13" font-weight="500" fill="#dbe6f5">① 一格的身体（俯视）</text>
+<text x="44" y="66" font-size="11.5" fill="#5b6f8c">比例 1 单位 = 128 px · core = 0.3525 · r = 0.44</text>
+
+<line x1="165" y1="80" x2="165" y2="328" stroke="rgba(255,255,255,.28)" stroke-width="1" stroke-dasharray="2 5"/>
+<line x1="335" y1="80" x2="335" y2="328" stroke="rgba(255,255,255,.28)" stroke-width="1" stroke-dasharray="2 5"/>
+<text x="165" y="341" font-size="11" fill="#5b6f8c" text-anchor="middle">±STEP/2</text>
+<text x="335" y="341" font-size="11" fill="#5b6f8c" text-anchor="middle">±STEP/2</text>
+
+<path d="M205 104 L295 104 A56 56 0 0 1 351 160 L351 250 A56 56 0 0 1 295 306 L205 306 A56 56 0 0 1 149 250 L149 160 A56 56 0 0 1 205 104 Z M205 160 L205 250 L295 250 L295 160 Z" fill="rgba(86,212,221,.10)" fill-rule="evenodd"/>
+<path d="M205 104 L295 104 A56 56 0 0 1 351 160 L351 250 A56 56 0 0 1 295 306 L205 306 A56 56 0 0 1 149 250 L149 160 A56 56 0 0 1 205 104 Z" fill="none" stroke="#56d4dd" stroke-width="1.5"/>
+<rect x="205" y="160" width="90" height="90" fill="none" stroke="#8ea3c0" stroke-width="0.5" stroke-dasharray="4 3"/>
+
+<circle cx="295" cy="160" r="2" fill="#8ea3c0"/>
+<text x="303" y="157" font-size="11" fill="#5b6f8c">弧心 = 内核角</text>
+
+<circle cx="250" cy="205" r="2.5" fill="#ffffff"/>
+<text x="250" y="196" font-size="11" fill="#dbe6f5" text-anchor="middle">格心 O</text>
+
+<circle cx="105" cy="125" r="3" fill="#a78bfa"/>
+<text x="105" y="112" font-size="11" fill="#a78bfa" text-anchor="middle">P（格外）</text>
+<line x1="105" y1="125" x2="205" y2="125" stroke="#8ea3c0" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="155" y="118" font-size="11" fill="#a78bfa" text-anchor="middle">qx = 0.78</text>
+<line x1="205" y1="125" x2="205" y2="160" stroke="#8ea3c0" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="211" y="145" font-size="11" fill="#a78bfa">qz = 0.27</text>
+<line x1="105" y1="125" x2="205" y2="160" stroke="#a78bfa" stroke-width="1.5"/>
+<text x="148" y="152" font-size="11" fill="#a78bfa" text-anchor="middle">‖max(q,0)‖₂ = 0.83</text>
+
+<circle cx="225" cy="240" r="3" fill="#7bc96f"/>
+<line x1="225" y1="240" x2="140" y2="256" stroke="#7bc96f" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="134" y="252" font-size="11" fill="#7bc96f" text-anchor="end">Q（格内）</text>
+<text x="134" y="266" font-size="11" fill="#7bc96f" text-anchor="end">qx = −0.16 · qz = −0.08</text>
+
+<line x1="340" y1="120" x2="386" y2="104" stroke="#f5b84b" stroke-width="0.5" stroke-dasharray="3 3"/>
+<text x="391" y="101" font-size="11" fill="#f5b84b">r = 0.44</text>
+<text x="391" y="115" font-size="11" fill="#5b6f8c">把直角磨成圆角</text>
+
+<line x1="250" y1="205" x2="250" y2="250" stroke="#56d4dd" stroke-width="1.5"/>
+<line x1="250" y1="250" x2="250" y2="306" stroke="#f5b84b" stroke-width="1.5"/>
+<text x="244" y="230" font-size="11" fill="#56d4dd" text-anchor="end">core = 0.3525</text>
+<text x="256" y="280" font-size="11" fill="#f5b84b">r = 0.44</text>
+<text x="256" y="318" font-size="11" fill="#dbe6f5">面距 = core + r = 0.7925</text>
+
+<line x1="149" y1="345" x2="351" y2="345" stroke="#263859" stroke-width="1"/>
+<line x1="149" y1="340" x2="149" y2="350" stroke="#263859" stroke-width="1"/>
+<line x1="351" y1="340" x2="351" y2="350" stroke="#263859" stroke-width="1"/>
+<text x="250" y="362" font-size="11.5" fill="#8ea3c0" text-anchor="middle">边界越过 ±STEP/2 虚线 ⇒ 面距 0.7925 &gt; 半格距 0.6625，必然侵入邻格</text>
+
+<text x="450" y="50" font-size="13" font-weight="500" fill="#dbe6f5">② 沿格心切一刀 · 场值剖面</text>
+<text x="450" y="66" font-size="11.5" fill="#5b6f8c">横轴 = 位置 x，纵轴 = 距离场 d</text>
+
+<line x1="473" y1="290" x2="473" y2="138" stroke="#263859" stroke-width="1" marker-end="url(#ax)"/>
+<line x1="473" y1="290" x2="640" y2="290" stroke="#263859" stroke-width="1" marker-end="url(#ax)"/>
+<text x="468" y="134" font-size="11" fill="#8ea3c0" text-anchor="end">d</text>
+<text x="637" y="306" font-size="11" fill="#8ea3c0" text-anchor="end">位置 x</text>
+<text x="470" y="146" font-size="10.5" fill="#5b6f8c" text-anchor="end">0.95</text>
+<text x="470" y="251" font-size="10.5" fill="#5b6f8c" text-anchor="end">−0.79</text>
+
+<line x1="473" y1="200" x2="637" y2="200" stroke="#8ea3c0" stroke-width="0.5" stroke-dasharray="4 3" opacity=".6"/>
+<text x="633" y="194" font-size="11" fill="#8ea3c0" text-anchor="end">d = 0</text>
+
+<path d="M508 200 L534 247 L576 247 L602 200 Z" fill="rgba(86,212,221,.14)"/>
+<path d="M478 170 L508 200 L478 200 Z" fill="rgba(245,184,75,.12)"/>
+<path d="M632 170 L602 200 L632 200 Z" fill="rgba(245,184,75,.12)"/>
+<polyline points="478,170 508,200 534,247 576,247 602,200 632,170" fill="none" stroke="#f5b84b" stroke-width="2"/>
+
+<text x="555" y="224" font-size="11" fill="#56d4dd" text-anchor="middle">d &lt; 0 · 格内</text>
+<text x="490" y="186" font-size="11" fill="#f5b84b" text-anchor="middle">d &gt; 0 · 格外</text>
+<text x="555" y="274" font-size="11" fill="#56d4dd" text-anchor="middle">格内常数 −(core + r) = −0.7925</text>
+<text x="608" y="216" font-size="11" fill="#f5b84b" text-anchor="middle">海岸轮廓</text>
+<line x1="534" y1="247" x2="534" y2="253" stroke="#56d4dd" stroke-width="1"/>
+<text x="522" y="264" font-size="10.5" fill="#56d4dd" text-anchor="end">core</text>
+<line x1="555" y1="290" x2="555" y2="296" stroke="#263859" stroke-width="1"/>
+<text x="555" y="308" font-size="10.5" fill="#8ea3c0" text-anchor="middle">0（格心）</text>
+
+<rect x="40" y="378" width="187" height="64" rx="8" fill="#101826" stroke="#1e2c42" stroke-width="0.5"/>
+<text x="54" y="395" font-size="12.5" font-weight="500" fill="#a78bfa">P 在格外</text>
+<text x="54" y="411" font-size="11.5" fill="#8ea3c0">d = ‖max(q,0)‖₂ − r</text>
+<text x="54" y="429" font-size="11.5" fill="#dbe6f5" font-family="'Cascadia Code','JetBrains Mono',Consolas,monospace">0.83 − 0.44 = +0.39 &gt; 0</text>
+
+<rect x="243" y="378" width="187" height="64" rx="8" fill="#101826" stroke="#1e2c42" stroke-width="0.5"/>
+<text x="257" y="395" font-size="12.5" font-weight="500" fill="#7bc96f">Q 在格内</text>
+<text x="257" y="411" font-size="11.5" fill="#8ea3c0">d = max(qx,qz) − r</text>
+<text x="257" y="429" font-size="11.5" fill="#dbe6f5" font-family="'Cascadia Code','JetBrains Mono',Consolas,monospace">−0.16 − 0.44 = −0.60 &lt; 0</text>
+
+<rect x="446" y="378" width="187" height="64" rx="8" fill="#101826" stroke="#1e2c42" stroke-width="0.5"/>
+<text x="460" y="395" font-size="12.5" font-weight="500" fill="#f5b84b">边界 d = 0</text>
+<text x="460" y="411" font-size="11.5" fill="#8ea3c0">海岸轮廓经过处</text>
+<text x="460" y="429" font-size="11.5" fill="#dbe6f5" font-family="'Cascadia Code','JetBrains Mono',Consolas,monospace">‖max(q,0)‖₂ = r</text>
+</svg>
+    <figcaption>图 2-1 · 圆角盒距离场拆解。<b>左（俯视）</b>：一格的身体 = 内核矩形（半宽 core）向外扩 r 的圆角边界，弧心恰好落在内核的四个角上；紫点 P 在格外，qx、qz 是扣掉 core 后的偏移，斜边就是第一项 ‖max(q,0)‖₂；绿点 Q 在格内，两个分量都是负的，取较大者即嵌入深度。<b>右（剖面）</b>：沿格心水平线切一刀，格内 d 恒为 −(core+r)，边界处穿过 0，格外随距离线性变正——这条琥珀曲线就是海岸轮廓的数学来源。<b>底部三卡</b>：公式三项各自的生效区域与算式。</figcaption>
+  </figure>
+
+  <ul>
+    <li><strong>第一项</strong> ‖max(q,0)‖₂：在方块<strong>外部</strong>时，是到矩形边的欧氏距离（外部为正）；</li>
+    <li><strong>第二项</strong> min(max(qx,qz),0)：在方块<strong>内部</strong>时，是负的"嵌入深度"；</li>
+    <li><strong>− r</strong>：把四个直角磨成半径 r 的圆角，同时让整个边界向外扩 r。</li>
+  </ul>
+  <p>于是格子的"面距"（中心到边界的距离）= <code style="font-family:var(--mono);color:#7dd3fc">core + r = 0.3525 + 0.44 = 0.7925</code>，而格心间距只有 <code style="font-family:var(--mono);color:#7dd3fc">STEP = 1.325</code>。因为 <span class="hl">0.7925 &gt; 1.325 / 2 = 0.6625</span>，相邻两个格子的"身体"必然互相侵入——这就是它们能连上的物理基础，与 smin 无关。</p>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 2 · 单格距离场</span><span class="tag">terrain.js:23-24 同公式</span><span class="sp"></span><button class="btn" id="s2-reset">恢复默认 0.44</button></div>
+    <div class="ctl"><label>圆角半径 r</label><input type="range" id="s2-r" min="0.15" max="0.60" step="0.01" value="0.44"><output id="s2-rv">0.44</output></div>
+    <canvas id="s2-cv" class="demo" style="height:380px"></canvas>
+    <div class="chips">
+      <div class="chip"><b id="s2-core">0.3525</b>内核半宽 core</div>
+      <div class="chip"><b id="s2-face">0.7925</b>面距 core + r</div>
+      <div class="chip"><b id="s2-half">0.6625</b>半格距 STEP / 2</div>
+      <div class="chip"><b id="s2-mid">-0.13</b>两格中点场值</div>
+      <div class="chip" id="s2-verdict" style="color:var(--green)"><b style="color:var(--green)">✓</b>面距 &gt; 半格距，必然重叠</div>
+    </div>
+    <p class="hint">青色 = 格子内部（越深越蓝），琥珀线 = 距离为 0 的海岸轮廓，虚线框 = 左右邻格（相距 1.325）。鼠标移到画布上可读取任意点的场值。<b>把 r 拖到 0.15 试试</b>：面距缩到 0.5025，小于半格距，邻格之间立刻出现缝隙——圆角半径不是审美参数，是连接参数。</p>
+  </div>
+
+  <div class="note warn"><b>改参铁律：</b>动 STEP、core、r 任何一个，都要重算 <code style="font-family:var(--mono)">core + r &gt; STEP / 2</code>。原版三个数（1.325 / 0.3525 / 0.44）是配套调过的，颈部宽度、海岸饱满度都指向同一组视觉。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="1">← 数据模型</button>
+    <button class="btn pri" data-go="3">下一章：smin 平滑并集 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 3 ═══════════ -->
+<section class="step" id="step-3">
+  <h1>自动连接 · smin 平滑并集<span class="en">STEP 3 · SMOOTH MINIMUM</span></h1>
+  <p class="lead">两个格子的距离场放在一起，怎么合成一个岛？<code style="font-family:var(--mono);color:#7dd3fc">min()</code> 能连但有折角，<code style="font-family:var(--mono);color:#f5b84b">smin()</code> 把折角抹圆——这就是"自动地形连接"的全部秘密。</p>
+
+  <div class="goal"><b>本页目标：</b>左右对比 min 与 smin 的海岸轮廓；用 k 和格距两个滑块，亲眼看到"折角变圆角"和"缝隙搭桥"两种能力。</div>
+
+  <h3>3.1 核心就一行</h3>
+  <pre class="code"><span class="src">terrain.js:8 · 平滑最小值（smooth minimum）</span><span class="kw">function</span> <span class="fn">smin</span>(a, b, k){
+  <span class="kw">var</span> h = Math.<span class="fn">max</span>(k - Math.<span class="fn">abs</span>(a-b), <span class="num">0</span>) / k;
+  <span class="hl"><span class="kw">return</span> Math.<span class="fn">min</span>(a, b) - h*h*k*<span class="num">.25</span>;</span>
+}</pre>
+  <ul>
+    <li>两个场值相差超过 k 时，h = 0，<strong>退化为 min</strong>（远处的格子互不干扰）；</li>
+    <li>相差在 k 以内时，按 h² 权重把并集结果<strong>往下压最多 k/4</strong>——压出来的"多余的负值"填平了 min 会有的折角；</li>
+    <li>每格按层数把自己的场并进第 0..h−1 层（<code style="font-family:var(--mono)">terrain.js:26</code>）：<code style="font-family:var(--mono);color:#7dd3fc">for(var l=0; l&lt;c.h; l++) out[l] = smin(out[l], d, .72)</code>。</li>
+  </ul>
+
+  <h3>3.2 两种能力的临界点</h3>
+  <p>设两格中心距为 g。每个格子在中点处的场值是 <code style="font-family:var(--mono);color:#7dd3fc">v = g/2 − 0.7925</code>：</p>
+  <div class="formula">min 断开临界：v ≥ 0 ⇒ g ≥ 2 × 0.7925 = 1.585　｜　smin 搭桥临界：v − k/4 &lt; 0 ⇒ g &lt; 2 × (0.7925 + k/4)</div>
+  <p>本项目 k = 0.72，搭桥极限 g &lt; 1.945；而格距 1.325 早已保证重叠。<strong>所以原版里 smin 的真正工作是"倒圆角"</strong>——把 min 在颈部形成的尖角（剖面看是一道折线，顶点色里会显出一道"假悬崖"）修成光滑过渡；搭桥能力是白送的保险。</p>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 3 · min vs smin</span><span class="tag">直接合成两格距离场</span><span class="sp"></span><button class="btn pri" id="s3-preset">项目参数 k=.72 · g=1.325</button></div>
+    <div class="ctl"><label>混合半径 k</label><input type="range" id="s3-k" min="0.05" max="1.40" step="0.01" value="0.72"><output id="s3-kv">0.72</output>
+      <label style="margin-left:18px">格距 g</label><input type="range" id="s3-g" min="1.10" max="2.10" step="0.01" value="1.325"><output id="s3-gv">1.325</output></div>
+    <div class="row">
+      <div><canvas id="s3-min" class="demo" style="height:290px"></canvas>
+        <div class="chips" style="justify-content:center"><div class="chip"><b style="color:var(--coral)" id="s3-neck-min">-0.13</b>min 颈部场值</div><div class="chip warn" id="s3-stat-min"><b>?</b>min 连接状态</div></div></div>
+      <div><canvas id="s3-smin" class="demo" style="height:290px"></canvas>
+        <div class="chips" style="justify-content:center"><div class="chip"><b style="color:var(--green)" id="s3-neck-smin">-0.31</b>smin 颈部场值</div><div class="chip" id="s3-stat-smin"><b>?</b>smin 连接状态</div></div></div>
+    </div>
+    <p class="hint">左右两图是同一对格子、同一个格距，唯一差别是合成方式。琥珀轮廓 = 海岸线。试试：<b>① g 拖到 1.7</b>——左图断成两岛，右图仍有一座 smooth 小桥；<b>② k 拖到 0.05</b>——右图退化成左图（k=0 本身是 0/0 退化输入，所以滑块从 0.05 起）；<b>③ k 拖到 1.4</b>——颈部被糊成一团，岛会"发胖"。</p>
+  </div>
+
+  <div class="note"><b>观察要点：</b>项目参数（k=0.72, g=1.325）下，两格中点场值 −0.13，smin 后 −0.31——<strong>连接体现在轮廓连续光滑，而不是中部凹陷</strong>。颈部深度只影响轮廓在"湾口"处的圆润度；min 在这里会留下一个尖尖的向内折角。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="2">← 单格距离场</button>
+    <button class="btn pri" data-go="4">下一章：域扭曲与高斯模糊 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 4 ═══════════ -->
+<section class="step" id="step-4">
+  <h1>有机化 · 域扭曲与高斯模糊<span class="en">STEP 4 · DOMAIN WARP &amp; GAUSSIAN BLUR</span></h1>
+  <p class="lead">圆角盒 + smin 出来的岛还是"方方的"。两道后续工序让它长出有机的海岸：<strong>域扭曲</strong>整体推移轮廓，<strong>高斯模糊</strong>抹平残留格感。</p>
+
+  <div class="goal"><b>本页目标：</b>用开关反复对比，看清每道工序贡献了什么；理解原版注释那句关键的话——"平滑的是<strong>共享标量层</strong>，不是各个格子的 mesh"。</div>
+
+  <h3>4.1 域扭曲：采样前先把坐标系揉一下</h3>
+  <pre class="code"><span class="src">terrain.js:20 · 所有格子共用同一个扭曲量，整条海岸线 coherent 变形</span><span class="kw">var</span> wx = x + <span class="fn">noise</span>(x*<span class="num">.65</span>, z*<span class="num">.65</span>, seed) * <span class="num">.06</span>,
+    wz = z + <span class="fn">noise</span>(z*<span class="num">.71</span>, x*<span class="num">.71</span>, seed+<span class="num">17</span>) * <span class="num">.06</span>;</pre>
+  <p>不是给每个格子单独抖动（那样格与格会"各扭各的"，露出马脚），而是<strong>采样坐标本身</strong>被一张连续的噪声场推移——相邻采样点拿到的扭曲量几乎相同，于是整条海岸线像被风吹的布一样整体起伏。扭曲幅度只有 0.06，刚好够破掉笔直感，又不至于撕裂轮廓。</p>
+
+  <h3>4.2 高斯模糊：在共享标量层上做可分离卷积</h3>
+  <pre class="code"><span class="src">terrain.js:37-43 · 5 抽头可分离高斯，先横后纵</span><span class="kw">var</span> kernel = [<span class="num">1</span>,<span class="num">4</span>,<span class="num">6</span>,<span class="num">4</span>,<span class="num">1</span>];                       <span class="cm">// 归一化系数 16</span>
+<span class="kw">for</span>(...) { <span class="kw">var</span> v=0; <span class="kw">for</span>(<span class="kw">var</span> k=-<span class="num">2</span>; k&lt;=2; k++) v += src[...+k]*kernel[k+<span class="num">2</span>]; temp[...] = v/<span class="num">16</span>; }  <span class="cm">// 横向</span>
+<span class="kw">for</span>(...) { ... temp[...] ... out[...] = v/<span class="num">16</span>; }                                                  <span class="cm">// 纵向</span></pre>
+  <div class="row" style="align-items:center;margin:6px 0 2px">
+    <div style="flex:0 0 210px">
+      <div style="display:flex;gap:5px;align-items:flex-end;height:64px" id="s4-kernel">
+        <div style="flex:1;background:#1d4a5c;border-radius:3px 3px 0 0;height:16%"></div>
+        <div style="flex:1;background:#2b6a75;border-radius:3px 3px 0 0;height:64%"></div>
+        <div style="flex:1;background:var(--teal);border-radius:3px 3px 0 0;height:100%"></div>
+        <div style="flex:1;background:#2b6a75;border-radius:3px 3px 0 0;height:64%"></div>
+        <div style="flex:1;background:#1d4a5c;border-radius:3px 3px 0 0;height:16%"></div>
+      </div>
+      <div style="display:flex;gap:5px;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:4px"><span style="flex:1;text-align:center">1</span><span style="flex:1;text-align:center">4</span><span style="flex:1;text-align:center">6</span><span style="flex:1;text-align:center">4</span><span style="flex:1;text-align:center">1</span></div>
+      <div style="font-size:11px;color:var(--faint);text-align:center;margin-top:2px">kernel = [1,4,6,4,1] / 16</div>
+    </div>
+    <div style="flex:1;font-size:12.5px;color:var(--dim)">卷积核半径 2 格采样（采样间距 0.225，合计覆盖约 0.9 世界单位）——<strong>足够覆盖一个格距 1.325</strong>，所以格界处的场值台阶能被真正抹匀；核太小只会把锯齿变成小锯齿。</div>
+  </div>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 4 · 开关对照</span><span class="tag">teach-field.js · 与 terrain.js 同公式</span><span class="sp"></span>
+      <button class="btn on" id="s4-warp">域扭曲 · 开</button><button class="btn on" id="s4-blur">高斯模糊 · 开</button><button class="btn" id="s4-cross">十字岛</button>
+    </div>
+    <div class="ctl"><label>扭曲振幅</label><input type="range" id="s4-amp" min="0" max="0.16" step="0.005" value="0.06"><output id="s4-ampv">0.06</output><span class="hint" style="flex-basis:100%">默认 0.06 与原版一致；本页默认参数下 teach-field 与真实 terrain.js 输出逐位相同（test-field.mjs 断言 maxDiff = 0）</span></div>
+    <canvas id="s4-cv" class="demo" style="height:400px"></canvas>
+    <p class="hint">建议顺序：<b>先关模糊</b>——海岸出现方格台阶与尖角（"格感"）；<b>再开模糊</b>——台阶变圆滑；<b>再开关扭曲对比</b>——扭曲让整条海岸线起波浪，而不只是抖边。</p>
+  </div>
+
+  <div class="note"><b>为什么模糊"共享标量层"是零接缝的关键：</b>如果先给每格单独建 mesh 再各自平滑，两个 mesh 在交界处会各扭各的，永远对不齐。原版把所有格子的距离场<strong>先融合进同一张 97² 的标量层</strong>（terrain.js:31-36），模糊只作用于这一张共享图层——格界在数据层面根本不存在，接缝自然无从谈起。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="3">← smin 平滑并集</button>
+    <button class="btn pri" data-go="5">下一章：层叠等高线 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 5 ═══════════ -->
+<section class="step" id="step-5">
+  <h1>抬高地形 · 层叠等高线<span class="en">STEP 5 · STACKED CONTOURS</span></h1>
+  <p class="lead">抬高不是"把格子拉高"，而是<strong>让这个格子多参加一层标量场</strong>。每层是一条闭合等高线，高度是各层 smoothstep 的累加——梯田山体就这样长出来。</p>
+
+  <div class="goal"><b>本页目标：</b>拖动层数滑块，同时看俯视图、纵剖面和 smoothstep 曲线三个视角，理解"整数层数如何变成连续光滑的高度"。</div>
+
+  <h3>5.1 层数怎么进入距离场</h3>
+  <pre class="code"><span class="src">terrain.js:26 · 格子的场按层数灌进第 0..h-1 层（每层一次 smin 并集）</span><span class="kw">for</span>(<span class="kw">var</span> l = <span class="num">0</span>; l &lt; c.h; l++) out[l] = <span class="fn">smin</span>(out[l], d, <span class="num">.72</span>);</pre>
+  <p>h = 3 的格子，会同时出现在第 0、1、2 三个标量层里。第 0 层是海滩基底，往上每多一层就多一条环绕它的等高线。</p>
+
+  <h3>5.2 高度 = 各层 smoothstep 贡献的累加</h3>
+  <pre class="code"><span class="src">terrain.js:51-53 · 高度累加公式</span><span class="kw">var</span> y = -<span class="num">1.1</span>;                                    <span class="cm">// 海床基准</span>
+y += <span class="num">1.34</span> * (<span class="num">1</span> - <span class="fn">smooth</span>(-<span class="num">.13</span>, <span class="num">.65</span>, d[<span class="num">0</span>]));      <span class="cm">// 第 0 层：海滩，抬 1.34</span>
+<span class="kw">for</span>(<span class="kw">var</span> l = <span class="num">1</span>; l &lt; max; l++)
+  y += <span class="num">.86</span> * (<span class="num">1</span> - <span class="fn">smooth</span>(-<span class="num">.24</span>, <span class="num">.23</span>, d[l]));    <span class="cm">// 之上每层抬 0.86 ⇒ 梯田</span></pre>
+  <p><code style="font-family:var(--mono);color:#7dd3fc">smooth(a,b,x)</code> 就是 smoothstep：在阈值区间内做 S 形过渡。层场值 d 远小于下界时贡献满额（整层抬起来），远大于上界时贡献为 0（这层还没出现）。<strong>层数 h 是整数阶梯，smoothstep 负责把每级台阶的边缘磨圆</strong>——所以从侧面看是柔和梯田，从顶视图看是一圈圈闭合等高线。</p>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 5 · 抬高一格</span><span class="tag">真实 terrain.js</span><span class="sp"></span>
+      <button class="btn" id="s5-minus">− 1 层</button><button class="btn" id="s5-plus">+ 1 层</button><button class="btn" id="s5-neigh">加上 4 邻居</button></div>
+    <div class="ctl"><label>高度层数 h</label><input type="range" id="s5-h" min="1" max="8" step="1" value="1"><output id="s5-hv">1</output>
+      <span class="readout pos" id="s5-center">中心高度 0.24</span><span class="readout" id="s5-formula">公式 -1.1+1.34 = 0.24</span></div>
+    <div class="row">
+      <div><canvas id="s5-top" class="demo" style="height:290px"></canvas><div class="hint" style="text-align:center">俯视 · 生物群系着色（一格 h=1）</div></div>
+      <div><canvas id="s5-side" class="demo" style="height:290px"></canvas><div class="hint" style="text-align:center">纵剖面 · 沿 x 轴穿过格心</div></div>
+    </div>
+    <canvas id="s5-ss" class="demo" style="height:180px;margin-top:12px"></canvas>
+    <div class="hint" style="text-align:center">smoothstep 曲线：蓝 = 第 0 层 smooth(-.13, .65, ·)（阈值宽，海滩过渡长）· 琥珀 = 之上各层 smooth(-.24, .23, ·)（阈值窄，台阶更陡）</div>
+  </div>
+
+  <div class="note"><b>观察要点：</b>① 每层贡献恒为 0.86，所以中心高度 = −1.1 + 1.34 + 0.86×(h−1)，8 层封顶 6.26；② 层数少时俯视图几乎全是沙滩（y &lt; 0.48），h ≥ 3 才开始出现草甸；③ 点"加上 4 邻居"后看剖面——邻居只有 1 层，主格 3 层，中间由 smin 自动过渡出山坡，这就是梯田山体的全景。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="4">← 域扭曲与高斯模糊</button>
+    <button class="btn pri" data-go="6">下一章：从场到网格 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 6 ═══════════ -->
+<section class="step" id="step-6">
+  <h1>从场到网格 · 网格化与生物群系<span class="en">STEP 6 · MESHING &amp; BIOMES</span></h1>
+  <p class="lead">标量场只是数学，屏幕上得有三角形。最后一步：在 113² 的规则网格上采样高度，逐顶点上色，剔除全水下的四边形——一个 BufferGeometry 就出来了。</p>
+
+  <div class="goal"><b>本页目标：</b>读懂网格化主循环；在演示里切换顶点色 / 坡度 / 线框 / 剔除四种视图，并亲手点击抬升，看三角形数量随之变化。</div>
+
+  <h3>6.1 主循环</h3>
+  <pre class="code"><span class="src">app.js:165-183 · 采样、上色、组装索引</span><span class="kw">var</span> N = draft ? <span class="num">80</span> : <span class="num">112</span>, span = <span class="num">22</span>, step = span/N;         <span class="cm">// 拖拽时草稿 80²，松手成品 112²</span>
+<span class="kw">for</span>(j...) <span class="kw">for</span>(i...){                                      <span class="cm">// ① 顶点：直接采样高度场</span>
+  <span class="kw">var</span> x = -span/2 + i*step, z = -span/2 + j*step;
+  positions.<span class="fn">push</span>(x, terrainField.<span class="fn">height</span>(x, z), z);
+}
+<span class="kw">for</span>(j...) <span class="kw">for</span>(i...){                                      <span class="cm">// ② 颜色：高度定沙滩，中心差分坡度定草甸/崖石</span>
+  <span class="kw">var</span> dx = (h[+1] - h[-1])/(step*2), dz = (h[+N] - h[-N])/(step*2), slope = Math.sqrt(dx*dx+dz*dz);
+  <span class="kw">if</span>(y &lt; <span class="num">.46</span>){ c = 沙滩色; <span class="kw">if</span>(y &lt; -<span class="num">.10</span>) c *= <span class="num">.88</span>; }  <span class="cm">// 水下沙滩压暗</span>
+  <span class="kw">else</span> c = 草甸/崖石（slope 分界）;
+}
+<span class="kw">for</span>(j...) <span class="kw">for</span>(i...){                                      <span class="cm">// ③ 索引：全水下四边形整块剔除，对角线交替方向避免条纹</span>
+  <span class="hl"><span class="kw">if</span>(Math.<span class="fn">max</span>(heights[a], heights[b], heights[c], heights[d]) &lt; -<span class="num">.8</span>) <span class="kw">continue</span>;</span>
+  <span class="kw">if</span>((i+j)%2) indices.<span class="fn">push</span>(a,c,b, b,c,d); <span class="kw">else</span> indices.<span class="fn">push</span>(a,c,d, a,d,b);
+}</pre>
+  <p>之后 <code style="font-family:var(--mono);color:#7dd3fc">computeVertexNormals()</code> 出法线，交给 Lambert 材质；草帽（surface-details.js）再对同一张网格做 mask 裁剪，生成崖边外扩的草皮唇边。</p>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 6 · 网格化四种视图</span><span class="tag">真实 terrain.js · makeIsland(24)</span><span class="sp"></span>
+      <button class="btn on" data-s6mode="color">顶点色</button><button class="btn" data-s6mode="slope">坡度</button><button class="btn" data-s6mode="wire">线框</button><button class="btn" data-s6mode="cull">剔除预览</button>
+    </div>
+    <p class="hint">画布即世界（span 22）。鼠标悬停读取该点 (x, z, y, slope, biome)；<b>左键点击 = 抬高最近格，右键 = 压低</b>，统计实时刷新。</p>
+    <canvas id="s6-cv" class="demo" style="height:430px"></canvas>
+    <div class="chips">
+      <div class="chip"><b id="s6-vtx">—</b>顶点数</div>
+      <div class="chip"><b id="s6-quad">—</b>四边形（剔除后）</div>
+      <div class="chip"><b id="s6-tri">—</b>三角形</div>
+      <div class="chip"><b id="s6-hover" style="font-size:12px;line-height:1.6">悬停读取…</div>
+    </div>
+    <div class="legend"><span><i style="background:#1d5f9e"></i>water y&lt;−0.07</span><span><i style="background:#e9d7a6"></i>sand y&lt;0.48</span><span><i style="background:#93b949"></i>meadow slope&lt;0.8</span><span><i style="background:#8d9c95"></i>cliff slope≥0.8</span><span><i style="background:#2a3f5e"></i>剔除区（全水下）</span></div>
+  </div>
+
+  <div class="note"><b>观察要点：</b>① "剔除预览"里深蓝空白就是被整块跳过的水下区域——海面不需要 4000 个三角形；② 对角线交替让三角剖分没有统一方向感，否则等值线会出摩尔纹；③ 所有四边形<strong>共享顶点</strong>，没有"格子内部面"，这是零接缝在网格层面的对应物；④ 拖拽时用 80² 草稿保交互流畅，松手才重建 112²（app.js:165 与动画循环里的 <code style="font-family:var(--mono)">rebuild(!!stroke)</code>）。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="5">← 层叠等高线</button>
+    <button class="btn pri" data-go="7">下一章：3D 实战 →</button>
+  </div>
+</section>
+
+<!-- ═══════════ 步骤 7 ═══════════ -->
+<section class="step" id="step-7">
+  <h1>实战 · 3D 造岛<span class="en">STEP 7 · FULL 3D PLAYGROUND</span></h1>
+  <p class="lead">把前面六课接起来：这个演示跑的不是教学简化代码，而是<strong>复刻工程里的真实模块</strong>。你每一次点击，都在重跑整条管道。</p>
+
+  <div class="goal"><b>本页目标：</b>在真实模块驱动的 3D 岛上一通乱点，把前六课的每个概念对应到眼前的现象；然后关掉页面，去改 <code style="font-family:var(--mono)">js/terrain.js</code> 里的参数，看会发生什么。</div>
+
+  <h3>7.1 这个演示用了什么</h3>
+  <table class="cmp">
+    <tr><th style="width:150px">模块</th><th>来源</th><th>职责</th></tr>
+    <tr><td><code style="font-family:var(--mono);color:#7dd3fc">three.min.js</code></td><td>原版 bundle 拆分</td><td>渲染器 / 正交相机 / 几何 / 光照</td></tr>
+    <tr><td><code style="font-family:var(--mono);color:#7dd3fc">terrain.js</code></td><td>原版 bundle 拆分</td><td>第 2~6 课的全部算法：SDF、smin、扭曲、高斯、高度、biome、拾取射线</td></tr>
+    <tr><td><code style="font-family:var(--mono);color:#7dd3fc">controls.js</code></td><td>原版 bundle 拆分</td><td>指针手势：单指编辑、双指导航（本演示 additionally 支持右键旋转）</td></tr>
+    <tr><td><code style="font-family:var(--mono);color:#7dd3fc">surface-details.js</code></td><td>原版 bundle 拆分</td><td>草帽：对地形网格做 mask 裁剪 + 崖边唇边</td></tr>
+    <tr><td>场景胶水代码</td><td>本页新写（约 200 行）</td><td>相机轨道、水面 shader、材质、UI、撤销栈</td></tr>
+  </table>
+
+  <div class="panel">
+    <div class="pt"><span class="t">实验 7 · 3D 造岛</span><span class="tag">真实模块</span><span class="sp"></span>
+      <button class="btn on" id="s7-raise">抬高</button><button class="btn" id="s7-lower">压低</button><button class="btn" id="s7-plant">草皮</button>
+      <button class="btn" id="s7-undo">撤销</button><button class="btn" id="s7-wire">线框</button><button class="btn" id="s7-reset">重置小岛</button>
+    </div>
+    <canvas id="scene3d"></canvas>
+    <div class="chips stats3d">
+      <div class="chip"><b id="s7-cells">0</b>格子数</div>
+      <div class="chip"><b id="s7-max">0</b>最高层</div>
+      <div class="chip"><b id="s7-tri">0</b>三角形</div>
+      <div class="chip"><b id="s7-fps">0</b>FPS</div>
+      <div class="chip" style="flex:1;min-width:180px"><b style="font-size:12.5px;line-height:1.7" id="s7-mode">模式：抬高 · 左键拖绘，右键旋转，滚轮缩放</b></div>
+    </div>
+    <p class="hint">初始岛用 <code style="font-family:var(--mono)">app.js:67-80</code> 的径向公式生成。<b>草皮模式</b>切换 green 标志，直接决定草帽（IslandSurface）是否在该格生长——这是验证第 1 课"green 只影响装饰"的最快方式。</p>
+  </div>
+
+  <h3>7.2 还没拆的模块</h3>
+  <p>复刻工程里还有四个装饰模块，原理与地形无关，感兴趣的按行号去读：</p>
+  <ul>
+    <li><strong>waterfalls.js</strong>（约 :273 起）—— 瀑布路径规划：从高处沿"单调下降包络"找入海点，逆坡检测避免穿模；</li>
+    <li><strong>boat-navigation.js</strong> —— 小船环岛航线：沿海岸距离场等值线巡游；</li>
+    <li><strong>decorations.js</strong> —— 飞鸟 / 小船 / 瀑布的放置与动画调度；</li>
+    <li><strong>audio.js / feedback.js</strong> —— Web Audio 合成音效、建造反馈粒子。</li>
+  </ul>
+
+  <div class="note ok"><b>下一步建议：</b>打开 <code style="font-family:var(--mono)">island-atelier/js/terrain.js</code>，把 <code style="font-family:var(--mono)">.72</code> 改成 1.2 看岛"发胖"，或把 <code style="font-family:var(--mono)">1.34</code> 改成 2.4 看海滩隆起——每一处改动都会在 3D 演示里立刻可见。改完跑一遍 <code style="font-family:var(--mono)">node learn/test-field.mjs</code> 确认数值仍自洽。</div>
+
+  <div class="stepnav">
+    <button class="btn" data-go="6">← 从场到网格</button>
+    <button class="btn pri" data-go="0">回到总览 ↺</button>
+  </div>
+</section>
+
+</main>
+<footer>
+  <b>岛屿建造 · 地形生成互动教学</b> · 基于 B 站玩具「🏝️岛屿建造」(Island Atelier) 复刻工程的真实源码编写<br>
+  源码基准：<code>island-atelier/js/terrain.js</code>（SDF 核心）· <code>island-atelier/js/app.js</code>（编辑模型与网格化）· 本页 <code>learn/js/teach-field.js</code> 为同公式教学复刻版（默认参数与真实模块逐位一致，由 <code>learn/test-field.mjs</code> 26 项断言保证）
+  <ul class="refs">
+    <li>Inigo Quilez — <i>Distance Functions</i>（圆角盒 SDF 与平滑并集的标准参考）</li>
+    <li>Sebastian Lague — <i>Marching Squares</i>（连续场提取轮廓的经典讲解）</li>
+    <li>RedBlobGames — <i>Autotile / Wang Tiles</i>（传统 bitmask 自动拼接路线）</li>
+  </ul>
+</footer>
+<script src="js/three.min.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/controls.js"></script>
+<script src="js/surface-details.js"></script>
+<script src="js/teach-field.js"></script>
+<script>
+(function(){
+'use strict';
+/* ═══════════ 基础工具 ═══════════ */
+var $=function(id){return document.getElementById(id)};
+var TF=window.IslandTeachField;
+function fit(cv){
+  var dpr=Math.min(window.devicePixelRatio||1,2),w=cv.clientWidth,h=cv.clientHeight;
+  if(!w||!h)return null;
+  var bw=Math.round(w*dpr),bh=Math.round(h*dpr);
+  if(cv.width!==bw||cv.height!==bh){cv.width=bw;cv.height=bh;}
+  var ctx=cv.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);
+  return {ctx:ctx,w:w,h:h,dpr:dpr};
+}
+function hex2rgb(h){h=h.replace('#','');return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];}
+function mix(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+function css(c){return 'rgb('+(c[0]|0)+','+(c[1]|0)+','+(c[2]|0)+')';}
+var C_IN=hex2rgb('#0e2a42'),C_IN2=hex2rgb('#5eead4'),C_OUT=hex2rgb('#0b1220'),C_OUT2=hex2rgb('#22345c');
+function sdfColor(d){return d<0?css(mix(C_IN,C_IN2,Math.min(1,-d/.8))):css(mix(C_OUT,C_OUT2,Math.min(1,d/1.2)));}
+var BIOME={water:'#1d5f9e',sand:'#e9d7a6',meadow:'#93b949',cliff:'#8d9c95'};
+function contour(ctx,w,h,fn,color){
+  ctx.fillStyle=color;var s=2;
+  for(var y=0;y<h;y+=s)for(var x=0;x<w;x+=s){
+    var d0=fn(x,y);if(typeof d0!=='number')continue;
+    var d1=fn(x+s,y),d2=fn(x,y+s);
+    if((d0>0)!==(d1>0)||(d0>0)!==(d2>0))ctx.fillRect(x,y,s,s);
+  }
+}
+/* 初始岛：app.js:67-80 的径向公式（与 test-field.mjs 一致） */
+function rand(seed,n){var s=Math.sin(n*127.1+seed*311.7)*43758.5453123;return s-Math.floor(s);}
+function makeIsland(seed){
+  var cells={};
+  for(var x=-5;x<=5;x++)for(var z=-5;z<=5;z++){
+    var r=Math.sqrt(x*x*.88+z*z*1.08),edge=4.15+rand(seed,x*41+z*31)*.9;
+    if(r>edge)continue;
+    var h=1;
+    if(r<3.8)h=2;
+    if((x+1)*(x+1)+(z+1.3)*(z+1.3)<8.2)h=4;
+    if((x+1.8)*(x+1.8)+(z+2.4)*(z+2.4)<1.8)h=6;
+    if(x>1&&z>-.5&&r<3.5)h=3;
+    if(rand(seed,x*9+z*141)>.87&&r>3.5)continue;
+    cells[x+','+z]={x:x,z:z,h:h,green:1};
+  }
+  cells['5,2']={x:5,z:2,h:1,green:1};cells['-4,4']={x:-4,z:4,h:1,green:1};
+  return cells;
+}
+/* 离屏渲染群系高度图（S1/S4/S5 共用） */
+function biomeSheet(field,span,N){
+  var off=document.createElement('canvas');off.width=N;off.height=N;
+  var octx=off.getContext('2d'),od=octx.createImageData(N,N),st=span*2/N;
+  for(var j=0;j<N;j++)for(var i=0;i<N;i++){
+    var x=-span+i*st,z=-span+j*st,p=field.surface(x,z);
+    var col=hex2rgb(BIOME[field.biome(p,x,z)]),o=(j*N+i)*4;
+    od.data[o]=col[0];od.data[o+1]=col[1];od.data[o+2]=col[2];od.data[o+3]=255;
+  }
+  octx.putImageData(od,0,0);return off;
+}
+function dots(ctx,field,cells,w,h,span){
+  ctx.fillStyle='rgba(255,255,255,.55)';
+  Object.keys(cells).forEach(function(k){var c=cells[k];
+    ctx.fillRect((c.x*1.325+span)/(2*span)*w-1,(c.z*1.325+span)/(2*span)*h-1,2,2);});
+}
+
+/* ═══════════ 步骤导航 ═══════════ */
+var TOTAL=8,cur=0,inited={},S7=null;
+function refresh(n){
+  if(!inited[n])return;
+  if(n===1)S1.preview(); else if(n===2)S2.render(); else if(n===3)S3.render();
+  else if(n===4)S4.render(); else if(n===5)S5.render(); else if(n===6)S6.render();
+  else if(n===7&&S7)S7.resize();
+}
+function go(n){
+  n=Math.max(0,Math.min(TOTAL-1,n));
+  var secs=document.querySelectorAll('.step');
+  secs[cur].classList.remove('on');secs[n].classList.add('on');cur=n;
+  document.querySelectorAll('nav a').forEach(function(a){
+    var g=+a.dataset.go;a.classList.toggle('on',g===n);a.classList.toggle('done',g<n&&g!==n);
+  });
+  $('pgText').textContent='第 '+(n+1)+' / '+TOTAL+' 步';
+  $('pgBar').style.width=(n/(TOTAL-1)*100)+'%';
+  if(!inited[n]){inited[n]=true;initStep(n);}
+  refresh(n);
+  window.scrollTo(0,0);
+  try{localStorage.setItem('island-teach-step',String(n));}catch(e){}
+}
+document.querySelectorAll('[data-go]').forEach(function(el){
+  el.addEventListener('click',function(e){e.preventDefault();go(+el.dataset.go);});
+});
+document.addEventListener('keydown',function(e){
+  if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;
+  if(e.key==='ArrowRight')go(cur+1);else if(e.key==='ArrowLeft')go(cur-1);
+});
+var rzT=null;
+window.addEventListener('resize',function(){clearTimeout(rzT);rzT=setTimeout(function(){refresh(cur);},150);});
+function initStep(n){
+  if(n===1)S1.init();else if(n===2)S2.init();else if(n===3)S3.init();
+  else if(n===4)S4.init();else if(n===5)S5.init();else if(n===6)S6.init();
+  else if(n===7)initS7();
+}
+
+/* ═══════════ 步骤 1 · 数据模型 ═══════════ */
+var S1={cells:{},seed:24,painting:null};
+var H_RAMP=['#caa96e','#b9c462','#a3c052','#93b949','#82ad3f','#6f9d35','#5f8c2e','#4f7a28'];
+function cellFromEvent(e){var t=e.target;while(t&&t!==document&&!(t.classList&&t.classList.contains('cell')))t=t.parentNode;return t;}
+S1.paint=function(e){
+  var t=cellFromEvent(e);if(!t)return;
+  var x=+t.dataset.x,z=+t.dataset.z,k=x+','+z,lower=(S1.painting==='lower');
+  if(lower){var c=S1.cells[k];if(c){c.h--;if(c.h<=0)delete S1.cells[k];}}
+  else{var c2=S1.cells[k];if(c2){if(c2.h<8)c2.h++;}else S1.cells[k]={x:x,z:z,h:1,green:1};}
+  S1.update();
+};
+S1.init=function(){
+  var g=$('grid');g.innerHTML='';
+  for(var z=-5;z<=5;z++)for(var x=-5;x<=5;x++){
+    var d=document.createElement('div');d.className='cell';d.dataset.x=x;d.dataset.z=z;
+    d.addEventListener('pointerdown',function(e){
+      e.preventDefault();
+      S1.painting=(e.button===2||e.shiftKey)?'lower':'raise';S1.paint(e);
+    });
+    d.addEventListener('pointerenter',function(e){if(S1.painting)S1.paint(e);});
+    d.addEventListener('contextmenu',function(e){e.preventDefault();});
+    g.appendChild(d);
+  }
+  document.addEventListener('pointerup',function(){S1.painting=null;});
+  $('s1-init').addEventListener('click',function(){S1.cells=makeIsland(24);S1.update();});
+  $('s1-one').addEventListener('click',function(){S1.cells={'0,0':{x:0,z:0,h:1,green:1}};S1.update();});
+  $('s1-clear').addEventListener('click',function(){S1.cells={};S1.update();});
+  S1.update();
+};
+S1.update=function(){S1.renderGrid();S1.stats();S1.json();S1.preview();};
+S1.renderGrid=function(){
+  var g=$('grid');
+  for(var i=0;i<g.children.length;i++){
+    var d=g.children[i],c=S1.cells[d.dataset.x+','+d.dataset.z];
+    if(c){d.textContent=c.h;d.style.background=H_RAMP[c.h-1];d.style.borderColor='rgba(255,255,255,.28)';d.title='('+d.dataset.x+','+d.dataset.z+')  h='+c.h;}
+    else{d.textContent='';d.style.background='';d.style.borderColor='';d.title='('+d.dataset.x+','+d.dataset.z+')  空';}
+  }
+};
+S1.stats=function(){
+  var ks=Object.keys(S1.cells),sum=0,max=0,green=0;
+  ks.forEach(function(k){var c=S1.cells[k];sum+=c.h;if(c.h>max)max=c.h;if(c.green)green++;});
+  $('s1-count').textContent=ks.length;$('s1-max').textContent=max;$('s1-sum').textContent=sum;$('s1-green').textContent=green;
+};
+S1.json=function(){
+  var all=Object.keys(S1.cells).sort(),lines=['cells = {'];
+  all.slice(0,14).forEach(function(k){var c=S1.cells[k];
+    lines.push('  "'+k+'": {x:'+c.x+', z:'+c.z+', h:'+c.h+', green:'+c.green+'},');});
+  if(all.length>14)lines.push('  … 共 '+all.length+' 条');
+  lines.push('}');
+  $('s1-json').textContent=lines.join('\n');
+};
+S1.preview=function(){
+  var f=fit($('s1-preview'));if(!f)return;
+  var ctx=f.ctx,w=f.w,h=f.h,field=window.IslandTerrain.create(S1.cells,S1.seed);
+  var span=11,N=Math.max(24,Math.min(96,Math.floor(w/3))),off=biomeSheet(field,span,N);
+  ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.drawImage(off,0,0,w,h);
+  dots(ctx,field,S1.cells,w,h,span);
+};
+
+/* ═══════════ 步骤 2 · 单格距离场 ═══════════ */
+var S2={r:.44,core:.3525};
+S2.init=function(){
+  var cv=$('s2-cv');
+  var hv=document.createElement('div');hv.className='readout';hv.style.marginTop='10px';
+  hv.textContent='悬停读取场值…';cv.parentNode.insertBefore(hv,cv.nextSibling);
+  $('s2-r').addEventListener('input',function(){S2.r=+this.value;S2.render();});
+  $('s2-reset').addEventListener('click',function(){$('s2-r').value='0.44';S2.r=.44;S2.render();});
+  cv.addEventListener('pointermove',function(e){
+    var r=cv.getBoundingClientRect(),W=4.6,H=4.6*r.height/r.width;
+    var wx=(e.clientX-r.left)/r.width*W-W/2,wz=(e.clientY-r.top)/r.height*H-H/2;
+    var d=TF.cellDistance(wx,wz,0,0,S2.core,S2.r);
+    hv.textContent='p=('+wx.toFixed(2)+', '+wz.toFixed(2)+')   d='+d.toFixed(3)+(d<0?'   格内':'   格外');
+    hv.className='readout '+(d<0?'pos':'neg');
+  });
+  S2.render();
+};
+S2.render=function(){
+  var f=fit($('s2-cv'));if(!f)return;
+  var ctx=f.ctx,w=f.w,h=f.h,W=4.6,H=4.6*h/w;
+  var img=ctx.createImageData(Math.round(w*f.dpr),Math.round(h*f.dpr)),data=img.data;
+  var bw=img.width,bh=img.height;
+  for(var py=0;py<bh;py++)for(var px=0;px<bw;px++){
+    var wx=(px/bw)*W-W/2,wz=(py/bh)*H-H/2;
+    var col=sdfColor(TF.cellDistance(wx,wz,0,0,S2.core,S2.r));
+    var o=(py*bw+px)*4;data[o]=col[0];data[o+1]=col[1];data[o+2]=col[2];data[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  contour(ctx,w,h,function(x,y){return TF.cellDistance((x/w)*W-W/2,(y/h)*H-H/2,0,0,S2.core,S2.r);},'rgba(245,184,75,.95)');
+  /* 邻格虚线框 */
+  var half=(S2.core+S2.r);
+  ctx.strokeStyle='rgba(86,212,221,.4)';ctx.setLineDash([4,4]);ctx.lineWidth=1;
+  [-1,1].forEach(function(s){
+    var cx=((s*1.325)+W/2)/W*w;
+    ctx.strokeRect(cx-half/W*w,h/2-half/H*h,2*half/W*w,2*half/H*h);
+  });
+  ctx.setLineDash([]);
+  /* ±STEP/2 参考线 */
+  ctx.strokeStyle='rgba(255,255,255,.28)';ctx.setLineDash([2,5]);
+  [-1,1].forEach(function(s){var px2=((s*.6625)+W/2)/W*w;ctx.beginPath();ctx.moveTo(px2,0);ctx.lineTo(px2,h);ctx.stroke();});
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,255,255,.7)';ctx.font='10px monospace';
+  ctx.fillText('虚线 = ±STEP/2 = ±0.6625',w-152,14);
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(w/2,h/2,2.5,0,7);ctx.fill();
+  var face=S2.core+S2.r;
+  $('s2-face').textContent=face.toFixed(4);
+  $('s2-mid').textContent=(0.31-S2.r).toFixed(3);
+  $('s2-rv').textContent=S2.r.toFixed(2);
+  var v=$('s2-verdict');
+  if(face>0.6625){v.className='chip';v.innerHTML='<b style="color:var(--green)">✓</b>面距 &gt; 半格距，必然重叠';}
+  else{v.className='chip warn';v.innerHTML='<b style="color:var(--coral)">✗</b>面距 &lt; 半格距，出现缝隙';}
+};
+
+/* ═══════════ 步骤 3 · smin 对比 ═══════════ */
+var S3={k:.72,g:1.325};
+function setStat(id,ok,label){
+  var el=$(id);el.className='chip '+(ok?'':'warn');
+  el.innerHTML='<b style="color:'+(ok?'var(--green)':'var(--coral)')+'">'+(ok?'✓ 连通':'✗ 断开')+'</b>'+label;
+}
+S3.draw=function(cvId,mode){
+  var f=fit($(cvId));if(!f)return;
+  var ctx=f.ctx,w=f.w,h=f.h,W=4.4,H=4.4*h/w,core=.3525,r=.44,g=S3.g,k=S3.k;
+  var img=ctx.createImageData(Math.round(w*f.dpr),Math.round(h*f.dpr)),data=img.data,bw=img.width,bh=img.height;
+  for(var py=0;py<bh;py++)for(var px=0;px<bw;px++){
+    var wx=(px/bw)*W-W/2,wz=(py/bh)*H-H/2;
+    var d1=TF.cellDistance(wx,wz,-g/2,0,core,r),d2=TF.cellDistance(wx,wz,g/2,0,core,r);
+    var col=sdfColor(mode==='min'?Math.min(d1,d2):TF.smin(d1,d2,k));
+    var o=(py*bw+px)*4;data[o]=col[0];data[o+1]=col[1];data[o+2]=col[2];data[o+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  contour(ctx,w,h,function(x,y){
+    var wx=(x/w)*W-W/2,wz=(y/h)*H-H/2;
+    var d1=TF.cellDistance(wx,wz,-g/2,0,core,r),d2=TF.cellDistance(wx,wz,g/2,0,core,r);
+    return mode==='min'?Math.min(d1,d2):TF.smin(d1,d2,k);
+  },'rgba(245,184,75,.95)');
+  ctx.fillStyle='rgba(255,255,255,.85)';ctx.font='11px monospace';
+  [-1,1].forEach(function(s){
+    ctx.beginPath();ctx.arc(((s*g/2)+W/2)/W*w,h/2,2.5,0,7);ctx.fill();
+    ctx.fillText(s<0?'A':'B',((s*g/2)+W/2)/W*w-3,h/2-8);
+  });
+  ctx.fillStyle='rgba(255,255,255,.55)';
+  ctx.fillText(mode==='min'?'min(a, b)':'smin(a, b, k='+k.toFixed(2)+')',8,14);
+};
+S3.init=function(){
+  $('s3-k').addEventListener('input',function(){S3.k=+this.value;S3.render();});
+  $('s3-g').addEventListener('input',function(){S3.g=+this.value;S3.render();});
+  $('s3-preset').addEventListener('click',function(){
+    $('s3-k').value='0.72';$('s3-g').value='1.325';S3.k=.72;S3.g=1.325;S3.render();
+  });
+  var th=document.createElement('div');th.className='hint';th.style.marginTop='10px';th.id='s3-th';
+  $('s3-smin').parentNode.parentNode.appendChild(th);
+  S3.render();
+};
+S3.render=function(){
+  S3.draw('s3-min','min');S3.draw('s3-smin','smin');
+  var v=S3.g/2-0.7925,sv=TF.smin(v,v,S3.k);
+  $('s3-neck-min').textContent=v.toFixed(3);
+  $('s3-neck-smin').textContent=sv.toFixed(3);
+  $('s3-kv').textContent=S3.k.toFixed(2);$('s3-gv').textContent=S3.g.toFixed(3);
+  setStat('s3-stat-min',v<0,'min');setStat('s3-stat-smin',sv<0,'smin');
+  var th=$('s3-th');
+  if(th)th.innerHTML='临界点：<b>min</b> 在 g ≥ '+(2*0.7925).toFixed(3)+' 时断开；<b>smin</b> 在 g &lt; '+(2*(0.7925+S3.k/4)).toFixed(3)+' 时仍能搭桥（当前 k='+S3.k.toFixed(2)+'）。项目参数 g=1.325 下两者都连通，差别在颈部是折角还是圆角。';
+};
+
+/* ═══════════ 步骤 4 · 域扭曲 + 高斯 ═══════════ */
+var S4={cells:null,warp:true,blur:true,amp:.06};
+S4.cross=function(){
+  return {'0,0':{x:0,z:0,h:2,green:1},'1,0':{x:1,z:0,h:1,green:1},'-1,0':{x:-1,z:0,h:1,green:1},
+          '0,1':{x:0,z:1,h:1,green:1},'0,-1':{x:0,z:-1,h:1,green:1}};
+};
+S4.init=function(){
+  S4.cells=S4.cross();
+  $('s4-warp').addEventListener('click',function(){
+    S4.warp=!S4.warp;this.classList.toggle('on',S4.warp);this.textContent='域扭曲 · '+(S4.warp?'开':'关');S4.render();
+  });
+  $('s4-blur').addEventListener('click',function(){
+    S4.blur=!S4.blur;this.classList.toggle('on',S4.blur);this.textContent='高斯模糊 · '+(S4.blur?'开':'关');S4.render();
+  });
+  $('s4-cross').addEventListener('click',function(){S4.cells=S4.cross();S4.render();});
+  $('s4-amp').addEventListener('input',function(){S4.amp=+this.value;$('s4-ampv').textContent=S4.amp.toFixed(3);S4.render();});
+  S4.render();
+};
+S4.render=function(){
+  var f=fit($('s4-cv'));if(!f)return;
+  var ctx=f.ctx,w=f.w,h=f.h,span=6.5;
+  var field=TF.create(S4.cells,24,{warp:S4.warp?S4.amp:0,blur:S4.blur});
+  var N=Math.max(24,Math.min(120,Math.floor(w/3.5))),off=biomeSheet(field,span,N);
+  ctx.clearRect(0,0,w,h);ctx.imageSmoothingEnabled=true;ctx.drawImage(off,0,0,w,h);
+  dots(ctx,field,S4.cells,w,h,span);
+  ctx.fillStyle='rgba(255,255,255,.75)';ctx.font='11px monospace';
+  ctx.fillText('扭曲 '+(S4.warp?'振幅 '+S4.amp.toFixed(3):'关')+' · 高斯 '+(S4.blur?'开':'关'),8,15);
+};
+
+/* ═══════════ 步骤 5 · 层叠等高线 ═══════════ */
+var S5={h:1,neigh:false};
+S5.cells=function(){
+  var c={'0,0':{x:0,z:0,h:S5.h,green:1}};
+  if(S5.neigh)[[1,0],[-1,0],[0,1],[0,-1]].forEach(function(v){c[v[0]+','+v[1]]={x:v[0],z:v[1],h:1,green:1};});
+  return c;
+};
+S5.init=function(){
+  $('s5-h').addEventListener('input',function(){S5.h=+this.value;S5.render();});
+  $('s5-plus').addEventListener('click',function(){S5.h=Math.min(8,S5.h+1);$('s5-h').value=S5.h;S5.render();});
+  $('s5-minus').addEventListener('click',function(){S5.h=Math.max(1,S5.h-1);$('s5-h').value=S5.h;S5.render();});
+  $('s5-neigh').addEventListener('click',function(){S5.neigh=!S5.neigh;this.classList.toggle('on',S5.neigh);S5.render();});
+  S5.render();
+};
+S5.render=function(){
+  var field=window.IslandTerrain.create(S5.cells(),24);
+  /* 俯视 */
+  var f1=fit($('s5-top'));
+  if(f1){var c1=f1.ctx,off=biomeSheet(field,4,Math.max(24,Math.min(110,Math.floor(f1.w/2.6))));
+    c1.clearRect(0,0,f1.w,f1.h);c1.imageSmoothingEnabled=true;c1.drawImage(off,0,0,f1.w,f1.h);
+    dots(c1,field,S5.cells(),f1.w,f1.h,4);}
+  /* 纵剖面 */
+  var f2=fit($('s5-side'));
+  if(f2){
+    var c2=f2.ctx,w=f2.w,h=f2.h,Y0=-1.4,Y1=2.4,X0=-3,X1=3;
+    var py=function(y){return h-(y-Y0)/(Y1-Y0)*h;},px=function(x){return (x-X0)/(X1-X0)*w;};
+    c2.clearRect(0,0,w,h);c2.fillStyle='#0b1220';c2.fillRect(0,0,w,h);
+    /* 梯田参考线 */
+    c2.setLineDash([3,4]);c2.lineWidth=1;
+    for(var i=0;i<S5.h;i++){var ly=0.24+.86*i;
+      if(ly>Y1)break;
+      c2.strokeStyle='rgba(245,184,75,'+(i===0?.75:.4)+')';c2.beginPath();c2.moveTo(0,py(ly));c2.lineTo(w,py(ly));c2.stroke();
+      c2.fillStyle='rgba(245,184,75,.8)';c2.font='9px monospace';c2.fillText('第'+i+'层顶 +'+ly.toFixed(2),4,py(ly)-3);}
+    c2.setLineDash([]);
+    /* 海平面 */
+    c2.strokeStyle='rgba(29,95,158,.9)';c2.setLineDash([5,4]);c2.beginPath();c2.moveTo(0,py(-0.07));c2.lineTo(w,py(-0.07));c2.stroke();c2.setLineDash([]);
+    /* 地形剖面 */
+    c2.beginPath();c2.moveTo(px(X0),py(Y0));
+    for(var x=X0;x<=X1;x+=.02)c2.lineTo(px(x),py(field.height(x,0)));
+    c2.lineTo(px(X1),py(Y0));c2.closePath();
+    c2.fillStyle='#28374f';c2.fill();
+    c2.beginPath();
+    for(var x2=X0;x2<=X1;x2+=.02){var yy=py(field.height(x2,0));x2===X0?c2.moveTo(px(x2),yy):c2.lineTo(px(x2),yy);}
+    c2.strokeStyle='#f5b84b';c2.lineWidth=1.6;c2.stroke();c2.lineWidth=1;
+    /* 格心标记 */
+    c2.fillStyle='#fff';c2.beginPath();c2.arc(px(0),py(field.height(0,0)),3,0,7);c2.fill();
+    c2.fillStyle='rgba(255,255,255,.6)';c2.font='10px monospace';c2.fillText('格心',px(0)+6,py(field.height(0,0))-6);
+  }
+  /* smoothstep 曲线 */
+  var f3=fit($('s5-ss'));
+  if(f3){
+    var c3=f3.ctx,w3=f3.w,h3=f3.h;
+    var sx=function(x){return (x+1)/2*w3;},sy=function(y){return h3-y*h3*.92-h3*.04;};
+    c3.clearRect(0,0,w3,h3);c3.fillStyle='#0b1220';c3.fillRect(0,0,w3,h3);
+    c3.strokeStyle='rgba(255,255,255,.12)';c3.beginPath();c3.moveTo(0,sy(0));c3.lineTo(w3,sy(0));c3.moveTo(0,sy(1));c3.lineTo(w3,sy(1));c3.stroke();
+    [[-.13,.65,'#56d4dd'],[-.24,.23,'#f5b84b']].forEach(function(t){
+      c3.strokeStyle=t[2];c3.setLineDash([4,3]);
+      [t[0],t[1]].forEach(function(tx){c3.beginPath();c3.moveTo(sx(tx),0);c3.lineTo(sx(tx),h3);c3.stroke();});
+      c3.setLineDash([]);
+      c3.beginPath();
+      for(var xx=-1;xx<=1;xx+=.01){var v=TF.smooth(t[0],t[1],xx);xx===-1?c3.moveTo(sx(xx),sy(v)):c3.lineTo(sx(xx),sy(v));}
+      c3.strokeStyle=t[2];c3.lineWidth=1.8;c3.stroke();c3.lineWidth=1;
+    });
+    c3.fillStyle='rgba(255,255,255,.6)';c3.font='10px monospace';
+    c3.fillText('smooth(-.13,.65,·) 海滩（阈值宽）',sx(-.13)+4,sy(.5)-6);
+    c3.fillText('smooth(-.24,.23,·) 之上各层（阈值窄）',sx(-.24)+4,sy(.5)+14);
+    c3.fillText('场值 d',4,12);c3.fillText('贡献',w3-34,sy(1)+12);
+  }
+  /* 读数 */
+  var cy=field.height(0,0);
+  $('s5-center').textContent='中心高度 '+cy.toFixed(3);
+  $('s5-formula').textContent='公式 -1.1+1.34+0.86×'+(S5.h-1)+' = '+(-1.1+1.34+.86*(S5.h-1)).toFixed(2);
+  $('s5-hv').textContent=S5.h;
+};
+
+/* ═══════════ 步骤 6 · 网格化 ═══════════ */
+var S6={cells:makeIsland(24),seed:24,N:96,span:22,mode:'color',field:null,heights:null};
+S6.step=22/96;
+S6.init=function(){
+  document.querySelectorAll('[data-s6mode]').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('[data-s6mode]').forEach(function(x){x.classList.remove('on');});
+      b.classList.add('on');S6.mode=b.dataset.s6mode;S6.render();
+    });
+  });
+  var cv=$('s6-cv');
+  cv.addEventListener('contextmenu',function(e){e.preventDefault();});
+  cv.addEventListener('pointermove',function(e){S6.hover(e);});
+  cv.addEventListener('pointerdown',function(e){
+    e.preventDefault();
+    var c=S6.cellAt(e);if(!c)return;
+    var k=c.x+','+c.z,lower=(e.button===2||e.shiftKey);
+    if(lower){var cc=S6.cells[k];if(cc){cc.h--;if(cc.h<=0)delete S6.cells[k];}}
+    else{var c2=S6.cells[k];if(c2){if(c2.h<8)c2.h++;}else if(Math.abs(c.x)<=7&&Math.abs(c.z)<=7)S6.cells[k]={x:c.x,z:c.z,h:1,green:1};}
+    S6.rebuild();S6.render();
+  });
+  S6.rebuild();S6.render();
+};
+S6.cellAt=function(e){
+  var r=$('s6-cv').getBoundingClientRect(),span=S6.span;
+  var wx=(e.clientX-r.left)/r.width*span-span/2,wz=(e.clientY-r.top)/r.height*span-span/2;
+  return {x:Math.round(wx/1.325),z:Math.round(wz/1.325),wx:wx,wz:wz};
+};
+S6.rebuild=function(){
+  var N=S6.N,st=S6.step,H=[];
+  S6.field=window.IslandTerrain.create(S6.cells,S6.seed);
+  for(var j=0;j<=N;j++)for(var i=0;i<=N;i++)H.push(S6.field.height(-S6.span/2+i*st,-S6.span/2+j*st));
+  S6.heights=H;
+  var q=0;
+  for(var j2=0;j2<N;j2++)for(var i2=0;i2<N;i2++){
+    var a=j2*(N+1)+i2,b=a+1,c=a+N+1,d=c+1;
+    if(Math.max(H[a],H[b],H[c],H[d])<-.8)continue;q++;
+  }
+  S6.quads=q;
+  $('s6-vtx').textContent=(N+1)*(N+1);$('s6-quad').textContent=q;$('s6-tri').textContent=q*2;
+};
+S6.hover=function(e){
+  var c=S6.cellAt(e);if(!c)return;
+  var p=S6.field.surface(c.wx,c.wz);
+  $('s6-hover').innerHTML='('+c.wx.toFixed(1)+', '+c.wz.toFixed(1)+')  y='+p.y.toFixed(2)+'  slope='+p.slope.toFixed(2)+'  '+S6.field.biome(p,c.wx,c.wz);
+};
+S6.render=function(){
+  var f=fit($('s6-cv'));if(!f)return;
+  var ctx=f.ctx,w=f.w,h=f.h,N=S6.N,H=S6.heights,st=S6.step,span=S6.span;
+  var px=function(x){return (x+span/2)/span*w;},pz=function(z){return (z+span/2)/span*h;};
+  ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1220';ctx.fillRect(0,0,w,h);
+  var slopeAt=function(i,j){
+    var dx=(H[j*(N+1)+Math.min(i+1,N)]-H[j*(N+1)+Math.max(i-1,0)])/(2*st);
+    var dz=(H[Math.min(j+1,N)*(N+1)+i]-H[Math.max(j-1,0)*(N+1)+i])/(2*st);
+    return Math.sqrt(dx*dx+dz*dz);
+  };
+  var fillQuad=function(a,b,c,d,color){
+    ctx.fillStyle=color;ctx.beginPath();
+    ctx.moveTo(px(-span/2+(a%(N+1))*st),pz(-span/2+Math.floor(a/(N+1))*st));
+    ctx.lineTo(px(-span/2+(b%(N+1))*st),pz(-span/2+Math.floor(b/(N+1))*st));
+    ctx.lineTo(px(-span/2+(c%(N+1))*st),pz(-span/2+Math.floor(c/(N+1))*st));
+    ctx.lineTo(px(-span/2+(d%(N+1))*st),pz(-span/2+Math.floor(d/(N+1))*st));
+    ctx.closePath();ctx.fill();
+  };
+  for(var j=0;j<N;j++)for(var i=0;i<N;i++){
+    var a=j*(N+1)+i,b=a+1,c=a+N+1,d=c+1;
+    var x0=-span/2+i*st,z0=-span/2+j*st;
+    if(Math.max(H[a],H[b],H[c],H[d])<-.8){
+      if(S6.mode==='cull')fillQuad(a,b,c,d,'#16233a');
+      continue;
+    }
+    if(S6.mode==='wire')continue;
+    var y=(H[a]+H[b]+H[c]+H[d])/4;
+    var sl=(slopeAt(i,j)+slopeAt(i+1,j)+slopeAt(i,j+1)+slopeAt(i+1,j+1))/4;
+    var col;
+    if(S6.mode==='slope'){var t=Math.min(1,sl/1.6);col=css(mix(hex2rgb('#7bc96f'),hex2rgb('#f07f6b'),t));}
+    else if(y<-0.07)col='#1d5f9e';else if(y<.48)col='#e9d7a6';else col=sl<.8?'#93b949':'#8d9c95';
+    fillQuad(a,b,c,d,col);
+  }
+  if(S6.mode==='wire'){
+    ctx.strokeStyle='rgba(86,212,221,.45)';ctx.lineWidth=.6;
+    for(var i2=0;i2<=N;i2+=2){
+      ctx.beginPath();ctx.moveTo(px(-span/2+i2*st),0);ctx.lineTo(px(-span/2+i2*st),h);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,pz(-span/2+i2*st));ctx.lineTo(w,pz(-span/2+i2*st));ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(167,139,250,.5)';
+    for(var j2=0;j2<N;j2+=4)for(var i3=0;i3<N;i3+=4){
+      var aa=j2*(N+1)+i3,bb=aa+1,cc=aa+N+1,dd=cc+1;
+      ctx.beginPath();
+      if((i3+j2)%2){ctx.moveTo(px(-span/2+i3*st),pz(-span/2+j2*st));ctx.lineTo(px(-span/2+(i3+1)*st),pz(-span/2+(j2+1)*st));}
+      else{ctx.moveTo(px(-span/2+(i3+1)*st),pz(-span/2+j2*st));ctx.lineTo(px(-span/2+i3*st),pz(-span/2+(j2+1)*st));}
+      ctx.stroke();
+    }
+  }
+  /* 边框与格心 */
+  ctx.strokeStyle='rgba(255,255,255,.15)';ctx.lineWidth=1;ctx.strokeRect(0,0,w,h);
+  dots(ctx,S6.field,S6.cells,w,h,span);
+};
+
+/* ═══════════ 步骤 7 · 3D 实战（真实模块） ═══════════ */
+function initS7(){
+  var cv=$('scene3d'),CELL=window.IslandTerrain.step;
+  var renderer;
+  try{
+    renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+  }catch(err){
+    cv.insertAdjacentHTML('afterend','<div class="note warn">WebGL 上下文创建失败：'+err.message+'</div>');return;
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  var scene=new THREE.Scene();
+  scene.background=new THREE.Color('#0b1220');
+  /* 正交相机：参数照搬 app.js:31 / 322-324 */
+  var camera=new THREE.OrthographicCamera(-12,12,9,-9,.1,100);
+  var yaw=.73,pitch=.70,zoom=1;
+  function updateCamera(){
+    var t=new THREE.Vector3(0,1.05,0);
+    camera.position.set(t.x+Math.sin(yaw)*22*Math.cos(pitch),t.y+Math.sin(pitch)*22,t.z+Math.cos(yaw)*22*Math.cos(pitch));
+    camera.lookAt(t);camera.updateMatrixWorld();
+  }
+  function updateProjection(){
+    var w=cv.clientWidth,h=cv.clientHeight,size=8.6*h/w;
+    camera.left=-size*w/h/zoom;camera.right=size*w/h/zoom;
+    camera.top=size/zoom;camera.bottom=-size/zoom;
+    camera.updateProjectionMatrix();updateCamera();
+  }
+  /* 光照 */
+  scene.add(new THREE.HemisphereLight('#bcd6ff','#16241c',.8));
+  var sun=new THREE.DirectionalLight('#fff3d6',1.2);
+  sun.position.set(9,14,6);sun.castShadow=true;
+  sun.shadow.mapSize.set(1024,1024);
+  sun.shadow.camera.left=-14;sun.shadow.camera.right=14;
+  sun.shadow.camera.top=14;sun.shadow.camera.bottom=-14;
+  sun.shadow.camera.near=1;sun.shadow.camera.far=42;
+  scene.add(sun);scene.add(sun.target);
+  var fill=new THREE.DirectionalLight('#9db8ff',.35);fill.position.set(-8,6,-9);scene.add(fill);
+  /* 水面 */
+  var waterUniforms={uTime:{value:0}};
+  var waterMat=new THREE.ShaderMaterial({
+    uniforms:waterUniforms,transparent:true,
+    vertexShader:[
+      'uniform float uTime;varying vec3 vW;varying float vWave;',
+      'void main(){',
+      ' vec3 p=position;',
+      ' float w=sin(p.x*.35+uTime*1.1)*.05+sin(p.y*.28-uTime*.8)*.04;',
+      ' p.z+=w;vWave=w;',
+      ' vec4 wp=modelMatrix*vec4(p,1.0);vW=wp.xyz;',
+      ' gl_Position=projectionMatrix*viewMatrix*wp;',
+      '}'
+    ].join('\n'),
+    fragmentShader:[
+      'varying vec3 vW;varying float vWave;uniform float uTime;',
+      'void main(){',
+      ' vec3 c1=vec3(.055,.22,.40),c2=vec3(.15,.52,.74);',
+      ' vec3 col=mix(c1,c2,smoothstep(-.05,.05,vWave)*.6+.4);',
+      ' float sp=pow(max(0.,sin(vW.x*.8+uTime*1.7)+sin(vW.z*.9-uTime*1.3)),8.)*.30;',
+      ' gl_FragColor=vec4(col+sp,.84);',
+      '}'
+    ].join('\n')
+  });
+  var water=new THREE.Mesh(new THREE.PlaneGeometry(90,90,1,1),waterMat);
+  water.rotation.x=-Math.PI/2;water.position.y=window.IslandTerrain.sea+.006;
+  scene.add(water);
+  /* 岛 */
+  var island=new THREE.Group();scene.add(island);
+  /* 材质与主工程 app.js:36-38 一致：MeshStandardMaterial + roughness:1（该 three 定制构建无 MeshLambertMaterial） */
+  var landMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1});
+  var grassMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:1,side:THREE.DoubleSide});
+  var wireMat=new THREE.MeshBasicMaterial({color:0x56d4dd,wireframe:true,transparent:true,opacity:.22});
+  /* 悬停光标环：RingGeometry(.42,.58,28) 的等价写法（该构建无 RingGeometry，Torus 环半径 .5 + 管半径 .08 → 径向 .42~.58） */
+  var ring=new THREE.Mesh(new THREE.TorusGeometry(.5,.08,8,28),
+    new THREE.MeshBasicMaterial({color:0xfff5be,transparent:true,opacity:.55,side:THREE.DoubleSide,depthWrite:false}));
+  ring.rotation.x=-Math.PI/2;ring.visible=false;scene.add(ring);
+  /* 状态 */
+  var cells=makeIsland(24),seed=24,mode='raise',history=[],future=[],terrainField=null;
+  var landMesh=null,grassMesh=null,wireMesh=null,wireOn=false,dirty=false;
+  var N=96,span=22,st=span/N,stroke=null,lastBuild=0;
+  var stats={cells:0,max:0,tri:0};
+  function key(x,z){return x+','+z;}
+  function snapshot(){return JSON.stringify({cells:cells});}
+  function updateStats(){
+    $('s7-cells').textContent=Object.keys(cells).length;
+    $('s7-max').textContent=terrainField?terrainField.max:0;
+    $('s7-tri').textContent=stats.tri;
+  }
+  /* 网格化：照搬 app.js:165-189（N=96，原版成品 112） */
+  function build(){
+    terrainField=window.IslandTerrain.create(cells,seed);
+    var positions=[],colors=[],indices=[],heights=[],slopes=[];
+    for(var j=0;j<=N;j++)for(var i=0;i<=N;i++){
+      var x=-span/2+i*st,z=-span/2+j*st,y=terrainField.height(x,z);
+      heights.push(y);positions.push(x,y,z);
+    }
+    for(var j2=0;j2<=N;j2++)for(var i2=0;i2<=N;i2++){
+      var idx=j2*(N+1)+i2,x2=positions[idx*3],z2=positions[idx*3+2],y2=heights[idx];
+      var dx=(heights[j2*(N+1)+Math.min(i2+1,N)]-heights[j2*(N+1)+Math.max(i2-1,0)])/(st*2);
+      var dz=(heights[Math.min(j2+1,N)*(N+1)+i2]-heights[Math.max(j2-1,0)*(N+1)+i2])/(st*2);
+      var slope=Math.sqrt(dx*dx+dz*dz);slopes.push(slope);
+      var grain=terrainField.noise(x2*1.5,z2*1.5),coarse=terrainField.noise(x2*.65,z2*.65),c=new THREE.Color('#939689');
+      c.set('#8c9e9a').lerp(new THREE.Color('#a5aca0'),.35+coarse*.12);
+      if(y2<.46){c.set('#ead39f');c.lerp(new THREE.Color('#d8bd86'),.22+grain*.15);if(y2<-.10)c.multiplyScalar(.88);}
+      colors.push(c.r,c.g,c.b);
+    }
+    for(var j3=0;j3<N;j3++)for(var i3=0;i3<N;i3++){
+      var a=j3*(N+1)+i3,b=a+1,cc=a+N+1,d=cc+1;
+      if(Math.max(heights[a],heights[b],heights[cc],heights[d])<-.8)continue;
+      if((i3+j3)%2)indices.push(a,cc,b,b,cc,d);else indices.push(a,cc,d,a,d,b);
+    }
+    var g=new THREE.BufferGeometry();
+    g.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+    g.setIndex(indices);g.computeVertexNormals();g.computeBoundingSphere();
+    if(landMesh){island.remove(landMesh);landMesh.geometry.dispose();}
+    landMesh=new THREE.Mesh(g,landMat);landMesh.castShadow=true;landMesh.receiveShadow=true;island.add(landMesh);
+    if(wireMesh){island.remove(wireMesh);wireMesh.geometry.dispose();}
+    wireMesh=new THREE.Mesh(g.clone(),wireMat);wireMesh.visible=wireOn;island.add(wireMesh);
+    var cap=window.IslandSurface.build(THREE,terrainField,cells,1,positions,slopes,indices,{fringe:true});
+    if(grassMesh){island.remove(grassMesh);grassMesh.geometry.dispose();}
+    grassMesh=new THREE.Mesh(cap.geometry,grassMat);grassMesh.castShadow=true;grassMesh.receiveShadow=true;island.add(grassMesh);
+    stats.tri=indices.length/3;stats.cells=Object.keys(cells).length;stats.max=terrainField.max;
+    updateStats();dirty=false;
+  }
+  /* 拾取：terrain 优先，空海面回退到海平面（app.js:326-327 同款） */
+  var ray=new THREE.Raycaster(),pointer=new THREE.Vector2();
+  var groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-window.IslandTerrain.sea);
+  var DBG={starts:0,moves:0,ends:0,hovers:0,selNull:0,selOk:0,paints:0,lastCell:null,lastRay:null};
+  function aim(e){
+    var r=cv.getBoundingClientRect();
+    pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);
+    ray.setFromCamera(pointer,camera);
+  }
+  function select(e){
+    aim(e);
+    var p=window.IslandTerrain.intersect(terrainField,ray.ray.origin,ray.ray.direction);
+    DBG.lastRay={o:[ray.ray.origin.x,ray.ray.origin.y,ray.ray.origin.z],d:[ray.ray.direction.x,ray.ray.direction.y,ray.ray.direction.z],terrainHit:!!p};
+    if(!p){p=ray.ray.intersectPlane(groundPlane,new THREE.Vector3());DBG.lastRay.planeHit=!!p;if(!p){DBG.selNull++;return null;}}
+    var x=Math.round(p.x/CELL),z=Math.round(p.z/CELL);
+    if(Math.abs(x)>7||Math.abs(z)>7){DBG.selNull++;DBG.lastRay.outOfBounds={x:x,z:z};return null;}
+    DBG.selOk++;DBG.lastCell={x:x,z:z};
+    return {x:x,z:z};
+  }
+  function paintOne(x,z){
+    if(Math.abs(x)>7||Math.abs(z)>7)return;
+    var k=key(x,z);if(stroke.visited[k])return;stroke.visited[k]=true;
+    var c=cells[k];
+    if(mode==='raise'){if(c){if(c.h>=8)return;c.h++;}else cells[k]={x:x,z:z,h:1,green:1};}
+    else if(mode==='lower'){if(!c)return;c.h--;if(c.h<=0)delete cells[k];}
+    else if(mode==='plant'){if(!c)return;c.green=c.green?0:1;}
+    dirty=true;
+  }
+  function paintAt(c){
+    if(!c)return;
+    DBG.paints++;
+    if(stroke.prev){
+      var dx=c.x-stroke.prev.x,dz=c.z-stroke.prev.z,steps=Math.max(Math.abs(dx),Math.abs(dz));
+      for(var i=1;i<=steps;i++)paintOne(Math.round(stroke.prev.x+dx*i/steps),Math.round(stroke.prev.z+dz*i/steps));
+    }else paintOne(c.x,c.z);
+    stroke.prev=c;
+  }
+  function ringColor(){return mode==='lower'?0xffcb9c:mode==='plant'?0xc9fa75:0xfff5be;}
+  function ringAt(c){
+    ring.position.set(c.x*CELL,Math.max(.02,terrainField.height(c.x*CELL,c.z*CELL)+.21),c.z*CELL);
+    ring.material.color.set(ringColor());ring.visible=true;
+  }
+  /* 手势：复用真实 controls.js（左键编辑 / 右键旋转 / 双指导航） */
+  window.IslandControls.create(cv,{
+    start:function(p){
+      DBG.starts++;
+      if(p.button===2){stroke={orbit:true,lastX:p.clientX,lastY:p.clientY};ring.visible=false;return;}
+      stroke={orbit:false,visited:{},prev:null};
+      var c=select(p);if(c){ringAt(c);paintAt(c);}
+    },
+    move:function(p){
+      DBG.moves++;
+      if(!stroke)return;
+      if(stroke.orbit){
+        yaw-=(p.clientX-stroke.lastX)*.008;
+        pitch=Math.max(.35,Math.min(1.25,pitch+(p.clientY-stroke.lastY)*.005));
+        stroke.lastX=p.clientX;stroke.lastY=p.clientY;updateCamera();return;
+      }
+      var c=select(p);if(c){ringAt(c);paintAt(c);}
+    },
+    end:function(){
+      DBG.ends++;
+      if(!stroke)return;
+      if(!stroke.orbit&&dirty){
+        history.push(snapshot());if(history.length>60)history.shift();future=[];
+        build();
+      }
+      stroke=null;
+    },
+    cancel:function(){stroke=null;ring.visible=false;},
+    hover:function(p){
+      DBG.hovers++;
+      if(stroke)return;
+      var c=select(p);
+      if(c)ringAt(c);else ring.visible=false;
+    },
+    view:function(g){
+      zoom=Math.max(.6,Math.min(1.8,zoom*g.scale));
+      yaw-=g.dx*.008+g.twist;
+      pitch=Math.max(.35,Math.min(1.25,pitch+g.dy*.005));
+      updateProjection();
+    }
+  });
+  cv.addEventListener('contextmenu',function(e){e.preventDefault();});
+  cv.addEventListener('wheel',function(e){
+    e.preventDefault();
+    zoom=Math.max(.6,Math.min(1.8,zoom*(e.deltaY<0?1.08:1/1.08)));
+    updateProjection();
+  },{passive:false});
+  /* UI */
+  function modeBtn(id,name){
+    $(id).addEventListener('click',function(){
+      mode=name;
+      ['s7-raise','s7-lower','s7-plant'].forEach(function(b){$(b).classList.remove('on');});
+      $(id).classList.add('on');
+      $('s7-mode').textContent='模式：'+({raise:'抬高',lower:'压低',plant:'草皮'})[name]+' · 左键拖绘，右键旋转，滚轮缩放';
+    });
+  }
+  modeBtn('s7-raise','raise');modeBtn('s7-lower','lower');modeBtn('s7-plant','plant');
+  $('s7-undo').addEventListener('click',function(){
+    if(!history.length)return;
+    future.push(snapshot());
+    var v=JSON.parse(history.pop());cells=v.cells;build();
+  });
+  $('s7-reset').addEventListener('click',function(){cells=makeIsland(24);build();});
+  $('s7-wire').addEventListener('click',function(){
+    wireOn=!wireOn;this.classList.toggle('on',wireOn);
+    if(wireMesh)wireMesh.visible=wireOn;
+  });
+  document.addEventListener('keydown',function(e){
+    if(!inited[7])return;
+    if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){
+      e.preventDefault();
+      if(e.shiftKey){if(future.length){history.push(snapshot());var r=JSON.parse(future.pop());cells=r.cells;build();}}
+      else if(history.length){future.push(snapshot());var v=JSON.parse(history.pop());cells=v.cells;build();}
+    }
+  });
+  /* 渲染循环 */
+  var last=performance.now(),fps=60;
+  function animate(now){
+    requestAnimationFrame(animate);
+    var dt=Math.min((now-last)/1000,.1);last=now;
+    if(dt>0)fps=fps*.9+(1/dt)*.1;
+    waterUniforms.uTime.value+=dt;
+    renderer.render(scene,camera);
+    if((now|0)%4===0)$('s7-fps').textContent=Math.round(fps);
+  }
+  S7={
+    cells:function(){return cells;},
+    build:build,
+    resize:function(){
+      renderer.setSize(cv.clientWidth,cv.clientHeight,false);
+      updateProjection();
+    },
+    stats:function(){return {cells:stats.cells,max:stats.max,tri:stats.tri,wireOn:wireOn};},
+    landMesh:function(){return landMesh;},
+    grassMesh:function(){return grassMesh;},
+    pick:function(x,y){var c=select({clientX:x,clientY:y});return c?{x:c.x,z:c.z}:(DBG.lastRay||null);},
+    debug:function(){DBG.hist=history.length;DBG.future=future.length;return DBG;}
+  };
+  S7.resize();build();requestAnimationFrame(animate);
+}
+
+/* ═══════════ 自检 ═══════════ */
+window.__errors=[];
+var _ce=console.error;
+console.error=function(){window.__errors.push([].slice.call(arguments).join(' '));_ce.apply(console,arguments);};
+function approx(a,b,eps){return Math.abs(a-b)<=eps;}
+window.__teach={
+  go:go,
+  dbgS7:function(){return S7?S7.debug():null;},
+  pickS7:function(x,y){return S7?S7.pick(x,y):null;},
+  state:function(){
+    return {step:cur,S1cells:Object.keys(S1.cells).length,S3:S3,S4:{warp:S4.warp,blur:S4.blur,amp:S4.amp},
+      S5:{h:S5.h,neigh:S5.neigh},S6:{mode:S6.mode},S7:S7?S7.stats():null};
+  },
+  check:function(){
+    var R=[];
+    function t(name,pass,detail){R.push({name:name,pass:!!pass,detail:detail||''});}
+    t('五个模块全部加载',!!(window.IslandTerrain&&window.IslandControls&&window.IslandSurface&&window.IslandTeachField&&window.THREE));
+    var cells=makeIsland(24),fr=window.IslandTerrain.create(cells,24),ft=TF.create(cells,24),md=0;
+    for(var i=0;i<=20;i++)for(var j=0;j<=20;j++){
+      var x=-6+i*.6,z=-6+j*.6;md=Math.max(md,Math.abs(fr.height(x,z)-ft.height(x,z)));
+    }
+    t('teach-field 与真实 terrain.js 输出一致',md===0,'maxDiff='+md);
+    t('格心场值 = -0.7925',approx(TF.cellDistance(0,0,0,0,.3525,.44),-.7925,1e-9));
+    t('两格中场值 = -0.13',approx(TF.cellDistance(.6625,0,0,0,.3525,.44),-.13,1e-9));
+    t('smin 颈部 = -0.31',approx(TF.smin(-.13,-.13,.72),-.31,1e-9));
+    t('smin 搭桥 = -0.1225',approx(TF.smin(.0575,.0575,.72),-.1225,1e-9));
+    t('S1 演示与统计同步',Object.keys(S1.cells).length===+$('s1-count').textContent);
+    t('S3 颈部读数正确',approx(parseFloat($('s3-neck-min').textContent),S3.g/2-.7925,1e-6)
+      &&approx(parseFloat($('s3-neck-smin').textContent),TF.smin(S3.g/2-.7925,S3.g/2-.7925,S3.k),1e-6));
+    var s5=parseFloat($('s5-center').textContent.replace(/[^-\d.]/g,''));
+    t('S5 中心高度符合公式',approx(s5,-1.1+1.34+.86*(S5.h-1),.03),'got '+s5);
+    if(inited[7]&&S7&&S7.landMesh()){
+      t('S7 3D 地形网格已生成',S7.landMesh().geometry.index.count/3>1000,'三角形='+S7.landMesh().geometry.index.count/3);
+      t('S7 草帽（IslandSurface）已生成',!!S7.grassMesh()&&S7.grassMesh().geometry.attributes.position.count>0,
+        '草皮顶点='+(S7.grassMesh()?S7.grassMesh().geometry.attributes.position.count:0));
+    }
+    t('控制台零错误',window.__errors.length===0,window.__errors.slice(0,2).join(' | '));
+    return {ok:R.every(function(r){return r.pass;}),results:R};
+  }
+};
+/* 初始：恢复上次进度 */
+var startStep=0;
+try{var s=localStorage.getItem('island-teach-step');if(s!==null)startStep=Math.max(0,Math.min(TOTAL-1,+s));}catch(e){}
+go(startStep);
+})();
+</script>
+</body>
+</html>
